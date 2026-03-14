@@ -1,14 +1,19 @@
 # pss/config.py
 from pathlib import Path
 
-# ===================== 基础路径配置（适配你的目录） =====================
-# 自动计算项目根目录（指向pss/，无需手动改）
 BASE_DIR = Path(__file__).parent.resolve()
 
-# 模型配置（对应你download_model里的./pss_env/models）
+# WeFlow 默认批量导出目录
+WEFLOW_EXPORT_DIR = BASE_DIR / "data" / "texts"
+
+# 临时文件目录（用于上传、API缓存等，阅后即焚）
+TEMP_DIR = BASE_DIR / "temp"
+
+# 模型配置
 MODEL_ID = "BAAI/bge-m3"                # 要下载的模型ID
 LOCAL_MODEL_DIR = BASE_DIR / "pss_md" / "models"  # 本地模型存放路径
 LLM_MODEL_DEFAULT = "qwen2.5:7b"        # 默认大模型（ollama）
+WEFLOW_API_URL = "http://127.0.0.1:5031" # WeFlow 后台 API 服务地址
 
 # 向量库配置（对应根目录的chroma_db）
 DB_PATH = BASE_DIR / "chroma_db"        # 向量库路径

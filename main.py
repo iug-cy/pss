@@ -1,6 +1,8 @@
 # main.py 统一启动入口
 import sys
 import os
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(BASE_DIR)
 
 def main():
     if len(sys.argv) > 1 and sys.argv[1] == "web":

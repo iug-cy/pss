@@ -1,22 +1,25 @@
-# 虚拟环境
+# python
+__pycache__/
+*.pyc
+*.pyo
+
+# virtual env
 pss_env/
 venv/
-.env/
-# 本地模型与向量数据库
+
+# embedding model (2GB)
 pss_md/models/
+
+# vector db
 chroma_db/
-# 个人数据与临时文件
-data/
+
+# temp files
 temp/
 
-*.log
-# Python 缓存
-__pycache__/
-*.py[cod]
-*$py.class
-# IDE 配置
-.idea/
+# IDE
 .vscode/
-# 操作系统文件
+.idea/
+
+# system
 .DS_Store
 Thumbs.db

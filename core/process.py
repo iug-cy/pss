@@ -9,19 +9,6 @@ from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 import uuid
 
-# --- 初始化配置 ---
-#DB_PATH = "../chroma_db"
-#COLLECTION_NAME = "chat_history"
-#MODEL_PATH = "../pss_md/models"
-
-# BASE_DIR = Path(__file__).parent.parent.resolve()
-# 基于根目录生成绝对路径，100%适配目录结构
-# DB_PATH = str(BASE_DIR / "chroma_db")
-# COLLECTION_NAME = "chat_history"
-# MODEL_PATH = str(BASE_DIR / "pss_md" / "models")
-
-import sys
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # ========== 导入config配置（替换原有硬编码） ==========
 from config import DB_PATH, COLLECTION_NAME, LOCAL_MODEL_DIR
 
@@ -57,15 +44,9 @@ class ChatRecordProcessor:
     def embed_model(self) -> SentenceTransformer:
         """加载本地Embedding模型"""
         if self._embed_model is None:
-            # 🌟 绝杀技 1：在真正初始化模型前，拦截并检查是否需要下载
             from bootstrap import auto_install_model
             auto_install_model()
-
             print(f"🚀 正在从本地路径[{self.model_path}] 加载 Embedding 模型...")
-
-            # 🌟 绝杀技 2：加入 local_files_only=True
-            # 这行代码极其重要！它能死死按住 SentenceTransformer，
-            # 绝对不允许它在后台偷偷连接 HuggingFace（防止国内网络报错卡死）
             self._embed_model = SentenceTransformer(
                 self.model_path,
                 device=self.device,
@@ -103,18 +84,13 @@ class ChatRecordProcessor:
         return self._text_splitter
 
     def _extract_arkme_content(self, msg: dict) -> str:
-        """【核心亮点】深度提取 Arkme 复杂消息格式"""
         msg_type = msg.get('type', '')
-        raw_content = msg.get('content', '')
-
+        raw_content = str(msg.get('content', '')).strip()
         if msg_type == "文本消息":
             return raw_content
-        elif msg_type in ["图片消息", "视频消息", "语音消息"]:
-            # WeFlow 导出的多模态，其 raw_content 通常是相对路径，如 ../images/xxx.png
-            # 记录下来，方便日后直接溯源
+        elif msg_type in["图片消息", "视频消息", "语音消息"]:
             return f"[发送了一份{msg_type}，本地存储路径或标识:{raw_content}]"
         elif msg_type in ["其他消息", "引用消息"]:
-            # 微信的文件名通常藏在 musicTitle 或 title 里
             title = msg.get('musicTitle') or msg.get('finderTitle') or msg.get('title')
             if title:
                 return f"[发送了一份文件/链接，文件名称为：{title}]"
@@ -176,10 +152,6 @@ class ChatRecordProcessor:
         else:
             return [], owner_name, chat_type
 
-        # ---------------------------------------------------------
-        # 🌟 核心修复 1：终极防线 - 强制按时间正序排列
-        # 无论 API 还是本地文件，彻底杜绝“时间倒流”现象
-        # ---------------------------------------------------------
         def get_time(record):
             try:
                 return datetime.strptime(record["time"], "%Y-%m-%d %H:%M:%S").timestamp()
@@ -188,9 +160,6 @@ class ChatRecordProcessor:
 
         messages_to_process.sort(key=get_time)
 
-        # ---------------------------------------------------------
-        # 2. 核心：基于时间窗口的聚合分组
-        # ---------------------------------------------------------
         grouped_records = []
         current_group = None
 
@@ -240,13 +209,10 @@ class ChatRecordProcessor:
 
         return grouped_records, owner_name, chat_type
 
-    # ...[ convert_groups_to_docs, split_docs, vectorize_and_store, full_process, search 均保持原样不变！] ...
     def convert_groups_to_docs(self, grouped_records: List[Dict], target_name: str = "未知", owner_name: str = "本机主人", chat_type: str = "私聊") -> List[Document]:
         docs = []
         for group_idx, group in enumerate(grouped_records):
-            # 🌟 上帝视角注入：让向量模型一眼看穿这是谁的聊天！
             lines = [f"【对话场景：这是提问的主人({owner_name}) 参与的 {chat_type}({target_name}) 的聊天片段】"]
-
             for t, s, c in group["messages"]:
                 if s in ["我", owner_name]:
                     display_s = f"主人({owner_name})"
@@ -260,7 +226,7 @@ class ChatRecordProcessor:
             merged_content = "\n".join(lines)
             metadata = {
                 "owner_name": owner_name,
-                "target_name": target_name,  # 存入元数据，方便以后做精确过滤
+                "target_name": target_name,
                 "chat_type": chat_type,
                 "start_time": group["start_time"],
                 "end_time": group["end_time"],
@@ -294,7 +260,6 @@ class ChatRecordProcessor:
 
         documents = [doc.page_content for doc in split_docs]
         metadatas = [doc.metadata for doc in split_docs]
-        # 🌟 致命 Bug 修复：使用 UUID 生成绝对唯一的 ID，保证每次导入必定成功！
         batch_hash = uuid.uuid4().hex[:6]
         ids = [f"doc_{batch_hash}_{i}" for i in range(len(split_docs))]
 
@@ -325,24 +290,17 @@ class ChatRecordProcessor:
         }
 
     def search(self, query: str, top_k: int = 5, where_filter: dict = None) -> List[Dict]:
-        """
-        高级搜索接口：支持纯向量语义搜索 + 元数据精准过滤
-        """
         query_embedding = self.embed_model.encode(query).tolist()
-        # 动态构造查询参数
         query_params = {
             "query_embeddings": [query_embedding],
             "n_results": top_k
         }
 
-        # 🌟 如果传入了过滤条件，就加上 where 语法
         if where_filter:
             query_params["where"] = where_filter
 
-        # 执行原生查询
         results = self.collection.query(**query_params)
 
-        # 将恶心的原生嵌套结构，清洗为优雅的 List[Dict]
         formatted_results = []
         if results.get("ids") and len(results["ids"]) > 0 and len(results["ids"][0]) > 0:
             for i in range(len(results["ids"][0])):
@@ -355,29 +313,3 @@ class ChatRecordProcessor:
         return formatted_results
 
 
-# ====================== 测试运行 ======================
-if __name__ == "__main__":
-    processor = ChatRecordProcessor(
-        db_path=DB_PATH,
-        collection_name=COLLECTION_NAME,
-        model_path=LOCAL_MODEL_DIR,
-        device="cpu"
-    )
-
-    # 【这里换成你的 Arkme 文件路径】
-    test_file = "../data/texts/私聊_谭启翔.json"
-
-    # 扩大 time_window，比如把30分钟内（1800秒）的聊天当成同一个会话
-    result = processor.full_process(
-        chat_file_path=test_file,
-        time_window=30,
-        overwrite=True
-    )
-
-    print("\n===== 测试搜索 (试试搜图片或文件) =====")
-    # 模拟搜索 Arkme 文件中独有的内容
-    search_results = processor.search("他的自动控制原理发货了吗", top_k=2)
-    for i, res in enumerate(search_results):
-        print(f"\n【结果 {i + 1}】")
-        print(f"时间范围：{res['metadata']['start_time']} - {res['metadata']['end_time']}")
-        print(f"内容：\n{res['content']}")

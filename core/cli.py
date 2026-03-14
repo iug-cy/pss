@@ -2,9 +2,8 @@
 import os
 
 from core.rag_core import PrivateMemoryAssistant
-import sys
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-# ========== 导入初始化函数+config ==========
+
+
 from bootstrap import init_environment
 from config import LLM_MODEL_DEFAULT
 
@@ -37,12 +36,12 @@ def main():
             print("再见！")
             break
 
-        # 【关键修复】：严格拦截 clear，并使用 continue 阻断向下执行
+        # 严格拦截 clear，并使用 continue 阻断向下执行
         if user_input.lower() == "clear":
             print("⏳ 正在执行大脑和数据库格式化...")
             msg = assistant.clear_memory()
             print(msg)
-            continue  # 这个 continue 极其重要，没有它指令就会发给 AI
+            continue
 
         if user_input.startswith("api "):
             # 支持格式: api wxid_xxxx 备注名

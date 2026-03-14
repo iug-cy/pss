@@ -1,9 +1,6 @@
 import os
 import re
-import sys
 
-# 🌟 核心修复 1：把环境变量注入提到了最前面，解决根目录 config 找不到的问题
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import json
 import time
@@ -12,12 +9,9 @@ import pandas as pd
 from docx import Document as DocxDocument
 import ollama
 
-# 🌟 核心修复 2：加上 "core."，使用绝对路径导入
 from core.weflow_client import WeFlowAPIClient
 from core.process import ChatRecordProcessor
-# ========== 导入config配置 ==========
 from config import LLM_MODEL_DEFAULT, SEARCH_TOP_K, CHAT_HISTORY_MAX_LEN
-
 
 class PrivateMemoryAssistant:
     """
@@ -53,30 +47,28 @@ class PrivateMemoryAssistant:
         if not matched_files:
             return False, f"❌ 未在导出目录中找到包含【{target_name}】的聊天记录。\n请确认您是否已在 WeFlow 软件中将其导出。"
 
-        # 2. 如果找到多个，默认取第一个（通常是最匹配的）
+        # 2. 如果找到多个，默认取第一个
         target_file = matched_files[0]
 
-        # 3. 复用我们极其成熟的本地导入逻辑
         try:
-            # 这里的 alias 直接用用户输入的名字
             import_msg = self.import_local_file(target_file, alias=target_name)
             return True, f"📁 自动定位到文件：`{os.path.basename(target_file)}`\n\n{import_msg}"
         except Exception as e:
             return False, f"❌ 自动导入失败: {e}"
 
     def import_local_file(self, file_path: str, alias: str = None) -> str:
-        self.chat_history.clear()# 🌟 核心防串戏：导入新文件时，清空上一个人的聊天记忆
-        """支持导入 txt, csv, xlsx, docx, json"""
-        if not os.path.exists(file_path):
-            return f"❌ 找不到文件: {file_path}"
-        # 如果没有指定备注，就用文件名当备注
-        target_name = alias or os.path.basename(file_path).split('.')[0].replace("私聊_", "")
-        ext = os.path.splitext(file_path)[-1].lower()
+        self.chat_history.clear()
+        if not os.path.exists(file_path): return f"❌ 找不到文件: {file_path}"
 
-        # 1. 如果是微信导出的 JSON，直接走专门的聊天处理通道
+        target_name = alias or os.path.basename(file_path).split('.')[0].replace("私聊_", "")
+
+        # 执行覆盖清理
+        self._delete_old_records(target_name)
+
+        ext = os.path.splitext(file_path)[-1].lower()
         if ext == '.json':
-            result = self.processor.full_process(chat_file_path=file_path, time_window=30,target_name=target_name)
-            return f"✅ 成功处理微信 JSON！生成了 {result['split_doc_count']} 个记忆记忆块。本机主人被识别为：【{result.get('owner_name')}】"
+            result = self.processor.full_process(chat_file_path=file_path, time_window=30, target_name=target_name)
+            return f"✅ 成功覆盖更新微信 JSON！生成了 {result['split_doc_count']} 个记忆块。本机主人被识别为：【{result.get('owner_name')}】"
 
         # 2. 如果是其他普通文档，走基础读取通道
         docs_content = []
@@ -117,17 +109,15 @@ class PrivateMemoryAssistant:
 
     def import_from_weflow_api(self, wxid: str, alias: str = None, limit: int = 5000) -> str:
         """通过 API 自动获取并入库"""
-        self.chat_history.clear()  # 🌟 核心防串戏：切换 API 导入对象时，彻底清空多轮对话记忆
-        # 注意：这里现在拿到的是一个清洗后的 List
+        self.chat_history.clear()
         api_name, owner_name, data_list = self.api_client.fetch_messages(wxid, limit)
 
         if not data_list:
             return "❌ 未获取到有效数据，请检查 wxid 或 WeFlow API 状态。"
 
-        # 如果用户手动输入了备注，优先使用用户的备注
         final_target_name = alias or api_name
+        self._delete_old_records(final_target_name)
 
-        # 将获取到的列表存为临时 JSON 给 process.py 读取
         base_dir = os.path.dirname(os.path.abspath(__file__))
         temp_dir = os.path.join(base_dir, "..", "temp")
         os.makedirs(temp_dir, exist_ok=True)
@@ -138,9 +128,8 @@ class PrivateMemoryAssistant:
                 json.dump(data_list, f, ensure_ascii=False)
 
             result = self.processor.full_process(chat_file_path=temp_file, time_window=30, target_name=final_target_name, owner_name=owner_name)
-            # 调试完毕后可以删掉临时文件
-            # os.remove(temp_file)
-
+            if os.path.exists(temp_file):
+                os.remove(temp_file)
             return f"✅ API 同步成功！微信对话已拆分为 {result['split_doc_count']} 个语义块入库。"
         except Exception as e:
             return f"❌ API 数据处理失败: {e}"
@@ -159,10 +148,18 @@ class PrivateMemoryAssistant:
         except Exception as e:
             return f"❌ 清空失败/已经是空的: {e}"
 
+    def _delete_old_records(self, target_name: str):
+        """ 覆盖更新机制：导入新数据前，精准抹除该对象的所有旧记忆"""
+        try:
+            # 利用 ChromaDB 的 where 过滤删除功能
+            self.processor.collection.delete(where={"target_name": target_name})
+            print(f"♻️ 已自动清理【{target_name}】的历史旧数据，准备覆写新记忆...")
+        except Exception:
+            pass
+
     def _parse_time_intent(self, query: str) -> list:
         """
         像人类一样解析用户的各种时间黑话，转化为具体的 YYYY-MM-DD 列表
-        支持：今天、昨天、上周、3月10日、3月等
         """
         current_time = datetime.datetime.now()
         target_dates = []
@@ -172,7 +169,7 @@ class PrivateMemoryAssistant:
         elif re.search(r'(前年)', query):
             base_year -= 2
 
-            # 1. 相对天数
+        # 1. 相对天数
         if re.search(r'(今天|今日)', query):
             target_dates.append(current_time.strftime("%Y-%m-%d"))
         if re.search(r'(昨天|昨日)', query):
@@ -180,12 +177,12 @@ class PrivateMemoryAssistant:
         if re.search(r'(前天)', query):
             target_dates.append((current_time - datetime.timedelta(days=2)).strftime("%Y-%m-%d"))
 
-            # 2. 相对周数
+        # 2. 相对周数
         if re.search(r'(上周|最近一周|这几天|这周|本周)', query):
             for i in range(0, 8):
                 target_dates.append((current_time - datetime.timedelta(days=i)).strftime("%Y-%m-%d"))
 
-            # 3. 绝对具体日期 (例如：3月10日, 2026年3月10号)
+        # 3. 绝对具体日期 (例如：3月10日, 2026年3月10号)
         date_pattern = r'(?:(\d{2,4})年)?(\d{1,2})月(\d{1,2})[日号]?'
         for match in re.finditer(date_pattern, query):
             y = int(match.group(1)) if match.group(1) else base_year
@@ -219,17 +216,16 @@ class PrivateMemoryAssistant:
         current_date_str = current_time.strftime("%Y-%m-%d")
         current_time_str = current_time.strftime("%Y-%m-%d %H:%M:%S")
 
-        # 1. NLP 提取时间
+        # NLP 提取时间
         target_dates = self._parse_time_intent(question)
 
-        # 🌟 修复 ChromaDB 崩溃：构造极其安全的 多条件组合 语法
         where_clauses = []
         if len(target_dates) == 1:
             where_clauses.append({"date": target_dates[0]})
         elif len(target_dates) > 1:
             where_clauses.append({"date": {"$in": target_dates}})
 
-        # 2. NLP 提取群聊/私聊意图
+        # 提取群聊/私聊意图
         if "私聊" in question:
             where_clauses.append({"chat_type": "私聊"})
         elif "群聊" in question:
@@ -240,8 +236,7 @@ class PrivateMemoryAssistant:
         if len(where_clauses) == 1:
             filter_dict = where_clauses[0]
         elif len(where_clauses) > 1:
-            filter_dict = {"$and": where_clauses}  # 必须用 $and 包裹！
-
+            filter_dict = {"$and": where_clauses}
         fallback_warning = ""
 
         if target_dates:
@@ -257,7 +252,7 @@ class PrivateMemoryAssistant:
                 top_k=SEARCH_TOP_K,
                 where_filter=filter_dict
             )
-            # 智能降级搜索
+            # 降级搜索
             if not search_results and filter_dict:
                 print("💡 严格条件未命中，启动全库降级检索...")
                 search_results = self.processor.search(query=question, top_k=SEARCH_TOP_K, where_filter=None)
@@ -289,11 +284,9 @@ class PrivateMemoryAssistant:
 
         context_text = "\n\n".join(context_parts)
 
-        # 🌟【核心突破 2：自适应变通提示词】
-        # 放宽限制，让 AI 学会区分“时间敏感问题”和“普通事实问题”
         system_prompt = f"""
         你是一个逻辑极其严密的私人记忆助理。请仔细阅读【参考聊天记录】并回答。
-
+        {fallback_warning}
         【核心推理法则（必须严格遵守）】：
         1. 🕵️ 跨会话第三方情报捕捉（极度重要！）：当用户询问“某人（如胡老师）的事”时，答案不仅可能在与该人的直接对话中，还极有可能隐藏在与“其他人”的聊天讨论中！
         - 你必须仔细阅读所有片段的【内容】，绝不能因为片段头部是“与A的聊天”就忽略里面关于B的线索！

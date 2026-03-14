@@ -2,10 +2,10 @@
 import sys
 import os
 from pathlib import Path
+import subprocess
 
-# 确保能找到 config
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from config import LOCAL_MODEL_DIR, MODEL_ID, DB_PATH
+from config import LOCAL_MODEL_DIR, MODEL_ID, DB_PATH, TEMP_DIR, WEFLOW_EXPORT_DIR
 
 
 def auto_install_model():
@@ -48,15 +48,27 @@ def auto_install_model():
         print(f"错误详情：{e}")
         sys.exit(1)
 
+def check_ollama():
+
+    try:
+        subprocess.run(["ollama","--version"],capture_output=True)
+
+    except:
+
+        print("未检测到 Ollama，请先安装 https://ollama.com")
 
 def init_environment():
-    """初始化运行环境（直接运行脚本时的入口）"""
     print(f"🔧 正在检查运行环境...")
+    check_ollama()
     auto_install_model()
-    DB_PATH.mkdir(parents=True, exist_ok=True)
-    print(f"✅ 向量库目录就绪：{DB_PATH}")
-    print("=" * 50)
 
+    # 自动创建所有必要的文件夹，防止在新电脑上报错
+    DB_PATH.mkdir(parents=True, exist_ok=True)
+    TEMP_DIR.mkdir(parents=True, exist_ok=True)
+    WEFLOW_EXPORT_DIR.mkdir(parents=True, exist_ok=True)
+
+    print(f"✅ 系统目录就绪。")
+    print("=" * 50)
 
 if __name__ == "__main__":
     init_environment()
