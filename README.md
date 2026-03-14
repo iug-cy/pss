@@ -9,6 +9,7 @@
 - Ollama 大模型问答
 - Web UI
 
+![img.png](index.png)
 ---
 
 # 环境要求
