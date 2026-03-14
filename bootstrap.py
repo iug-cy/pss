@@ -9,15 +9,13 @@ from config import LOCAL_MODEL_DIR, MODEL_ID, DB_PATH, TEMP_DIR, WEFLOW_EXPORT_D
 
 
 def auto_install_model():
-    """全自动检查并下载模型到 pss_md/models"""
+    """自动检查并下载模型到 pss_md/models"""
     LOCAL_MODEL_DIR.mkdir(parents=True, exist_ok=True)
 
-    # 检查核心文件是否完整 (只需要配置文件 + 任意一种权重文件即可)
     weight_files = ["pytorch_model.bin", "model.safetensors"]
     has_weight = any((LOCAL_MODEL_DIR / f).exists() for f in weight_files)
     has_config = (LOCAL_MODEL_DIR / "config.json").exists()
 
-    # 如果模型已存在，直接放行
     if has_weight and has_config:
         return True
 
@@ -26,7 +24,6 @@ def auto_install_model():
     print(f"⏳ 模型大小约 2.2GB，根据网速可能需要几分钟，请耐心等待...\n")
 
     try:
-        # 动态检查并安装 modelscope (防止换电脑后缺库)
         try:
             import modelscope
         except ImportError:
@@ -48,6 +45,22 @@ def auto_install_model():
         print(f"错误详情：{e}")
         sys.exit(1)
 
+def ensure_ollama_model(model):
+
+    try:
+        result = subprocess.run(
+            ["ollama", "show", model],
+            capture_output=True,
+            text=True
+        )
+
+        if result.returncode != 0:
+            print(f"正在下载 Ollama 模型: {model}")
+            subprocess.run(["ollama", "pull", model])
+
+    except FileNotFoundError:
+        print("未检测到 Ollama，请先安装：https://ollama.com")
+
 def check_ollama():
 
     try:
@@ -60,9 +73,9 @@ def check_ollama():
 def init_environment():
     print(f"🔧 正在检查运行环境...")
     check_ollama()
+    ensure_ollama_model("qwen2.5:7b")
     auto_install_model()
 
-    # 自动创建所有必要的文件夹，防止在新电脑上报错
     DB_PATH.mkdir(parents=True, exist_ok=True)
     TEMP_DIR.mkdir(parents=True, exist_ok=True)
     WEFLOW_EXPORT_DIR.mkdir(parents=True, exist_ok=True)

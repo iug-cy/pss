@@ -67,7 +67,6 @@ def main():
                 print(result_msg)
                 continue
 
-        # 只有上面的指令都没命中，才会进入大模型问答
         print("🧠 AI 正在检索记忆并思考...")
         result_dict = assistant.ask(user_input)
 
