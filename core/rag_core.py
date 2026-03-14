@@ -215,29 +215,53 @@ class PrivateMemoryAssistant:
         """
         核心问答接口：返回字典，包含大模型的回答和参考来源。
         """
+        current_time = datetime.datetime.now()
+        current_date_str = current_time.strftime("%Y-%m-%d")
+        current_time_str = current_time.strftime("%Y-%m-%d %H:%M:%S")
+
+        # 1. NLP 提取时间
         target_dates = self._parse_time_intent(question)
 
-        filter_dict = None
+        # 🌟 修复 ChromaDB 崩溃：构造极其安全的 多条件组合 语法
+        where_clauses = []
         if len(target_dates) == 1:
-            filter_dict = {"date": target_dates[0]}
+            where_clauses.append({"date": target_dates[0]})
         elif len(target_dates) > 1:
-            # ChromaDB 原生支持 $in 语法，完美支持“整个3月”或“上周”的多天过滤！
-            filter_dict = {"date": {"$in": target_dates}}
+            where_clauses.append({"date": {"$in": target_dates}})
+
+        # 2. NLP 提取群聊/私聊意图
+        if "私聊" in question:
+            where_clauses.append({"chat_type": "私聊"})
+        elif "群聊" in question:
+            where_clauses.append({"chat_type": "群聊"})
+
+        # 组装为 Chroma 要求的最终格式
+        filter_dict = None
+        if len(where_clauses) == 1:
+            filter_dict = where_clauses[0]
+        elif len(where_clauses) > 1:
+            filter_dict = {"$and": where_clauses}  # 必须用 $and 包裹！
+
+        fallback_warning = ""
 
         if target_dates:
-            # 取首尾日期展示给用户看，显得特别有科技感
             target_dates.sort()
             date_range_str = f"[{target_dates[0]}]" if len(
                 target_dates) == 1 else f"[{target_dates[0]} 至 {target_dates[-1]}]"
             print(f"💡 NLP 解析成功！已启动强制时间结界，锁定查询范围: {date_range_str}")
 
         try:
-            # 🌟 完美回归！使用你升级后的优雅封装接口，传入 where_filter！
+            # 第一次检索（带严格过滤条件）
             search_results = self.processor.search(
                 query=question,
                 top_k=SEARCH_TOP_K,
                 where_filter=filter_dict
             )
+            # 智能降级搜索
+            if not search_results and filter_dict:
+                print("💡 严格条件未命中，启动全库降级检索...")
+                search_results = self.processor.search(query=question, top_k=SEARCH_TOP_K, where_filter=None)
+                fallback_warning = f"\n【系统重要警告】：主人询问了特定的时间（如今天、3月10日），但在该限定条件内没有找到任何聊天记录！以下提供的记录是我在**全库其他历史时间**中找到的。请在回答开头明确告知主人：在指定时间没有记录，但在历史时间(说出具体日期)找到了以下线索！\n"
         except Exception as e:
             print(f"检索出错: {e}")
             search_results = []
@@ -247,9 +271,9 @@ class PrivateMemoryAssistant:
             return {
                 "answer": f"记忆库中未找到相关的线索。{time_tip}没有发生相关的聊天。",
                 "sources": [],
-                "raw_context": ""  # 🌟 补上这个空字段，满足前端的胃口
+                "raw_context": ""
             }
-        # 🌟 这里直接用你封装好的元数据，代码变得非常干净
+
         dynamic_owner_name = search_results[0]['metadata'].get('owner_name', '本机主人')
 
         context_parts = []
@@ -258,7 +282,8 @@ class PrivateMemoryAssistant:
             content = res['content']
             meta = res['metadata']
             time_range = f"{meta.get('start_time', '')} - {meta.get('end_time', '')}"
-            src_str = f"来源 {i + 1}: 与【{meta.get('target_name', '未知')}】的聊天 ({time_range})"
+            c_type = meta.get('chat_type', '私聊')
+            src_str = f"来源 {i + 1}: 【{c_type}】与 {meta.get('target_name', '未知')} ({time_range})"
             sources.append(src_str)
             context_parts.append(f"--- 片段 {i + 1} ---\n{content}")
 
@@ -267,23 +292,25 @@ class PrivateMemoryAssistant:
         # 🌟【核心突破 2：自适应变通提示词】
         # 放宽限制，让 AI 学会区分“时间敏感问题”和“普通事实问题”
         system_prompt = f"""
-        你是一个逻辑极其严密的私人电子取证与记忆助理。请仔细阅读【参考聊天记录】并回答。
+        你是一个逻辑极其严密的私人记忆助理。请仔细阅读【参考聊天记录】并回答。
 
         【核心推理法则（必须严格遵守）】：
         1. 🕵️ 跨会话第三方情报捕捉（极度重要！）：当用户询问“某人（如胡老师）的事”时，答案不仅可能在与该人的直接对话中，还极有可能隐藏在与“其他人”的聊天讨论中！
         - 你必须仔细阅读所有片段的【内容】，绝不能因为片段头部是“与A的聊天”就忽略里面关于B的线索！
         2. 🎭 角色代入：片段中出现的“我”代表用户本人。每段开头的【这是你与 XXX 的聊天片段】说明了当前对话的另一方是谁。
-        3. 严格遵循以下 XML 格式进行思考和作答。
+        
         【极度重要法则】：
         1. 身份绑定：“{dynamic_owner_name}” 是向你提问的主人。
-        2. 绝对真实：如果你提供的【参考聊天片段】里没有回答用户问题的证据，绝对禁止编造！直接回答“在这段时间内，聊天记录未提及...”。
-        3. 📁 文件与多模态寻回（重要）：如果主人在寻找某个文件、安装包、图片或视频（如“他发给我的安装包叫什么”、“上次那张图片在哪”），你必须在记录中仔细寻找包含【发送了一份文件/链接，文件名称为：...】或【本地存储路径或标识:...】的内容，并**在回答中明确写出该文件的准确名称或路径**！
-        4. 严格遵循以下 XML 格式进行思考和作答。
+        2. 场景隔离：仔细阅读片段开头的【对话场景】。如果主人问“私聊里发的”，你绝不能拿“群聊”的记录去充数！
+        3. 绝对真实：如果你提供的【参考聊天片段】里没有回答用户问题的证据，绝对禁止编造！直接回答“在这段时间内，聊天记录未提及...”。
+        4. 📁 文件与多模态寻回（重要）：如果主人在寻找某个文件、安装包、图片或视频（如“他发给我的安装包叫什么”、“上次那张图片在哪”），你必须在记录中仔细寻找包含【发送了一份文件/链接，文件名称为：...】或【本地存储路径或标识:...】的内容，并**在回答中明确写出该文件的准确名称或路径**！
+        5. 严格遵循以下 XML 格式进行思考和作答。
         
         <thought>
-        - 梳理时间线和人物关系。
+        - 主人问的是私聊还是群聊？问的是什么时间？有没有触发【系统重要警告】？
         - 如果是寻物，提取出对应的文件名或路径。
         - 区分“{dynamic_owner_name}”说了什么，对方说了什么。
+        - 分析参考片段中的场景和时间是否吻合。
         - 提取有效结论。
         </thought>
         <answer>
@@ -308,13 +335,18 @@ class PrivateMemoryAssistant:
             thought_match = re.search(r'<thought>(.*?)</thought>', raw_answer, re.DOTALL)
             answer_match = re.search(r'<answer>(.*?)</answer>', raw_answer, re.DOTALL)
 
-            if thought_match and answer_match:
-                thought_process = thought_match.group(1).strip()
+            if answer_match:
                 final_answer = answer_match.group(1).strip()
-                answer = f"🧠【AI 逻辑分析】:\n{thought_process}\n\n🤖【最终结论】:\n{final_answer}"
+                if thought_match:
+                    thought_process = thought_match.group(1).strip()
+                    answer = f"🧠【AI 逻辑分析】:\n{thought_process}\n\n🤖【最终结论】:\n{final_answer}"
+                else:
+                    answer = f"🤖【最终结论】:\n{final_answer}"
             else:
-                answer = raw_answer
-                final_answer = raw_answer
+                # 兜底：抹除可能残留的标签
+                final_answer = raw_answer.replace('<answer>', '').replace('</answer>', '').replace('<thought>','').replace(
+'</thought>', '').strip()
+                answer = final_answer
 
             self.chat_history.append({'role': 'user', 'content': question})
             self.chat_history.append({'role': 'assistant', 'content': final_answer})

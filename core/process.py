@@ -142,13 +142,17 @@ class ChatRecordProcessor:
 
         messages_to_process = []
         owner_name = fallback_owner
+        chat_type = "私聊"  # 默认会话类型
 
         if isinstance(chat_data, dict) and "messages" in chat_data:
+            if "session" in chat_data:
+                chat_type = chat_data["session"].get("type", "私聊")
+
             sender_map = {
                 s.get('senderID'): s.get('displayName', s.get('nickname', '未知'))
                 for s in chat_data.get('senders', [])
             }
-            # 🌟 从本地 Arkme 文件中提取主人的名字
+
             for msg in chat_data.get("messages", []):
                 if msg.get("isSend", 0) in [1, True]:
                     owner_name = sender_map.get(msg.get("senderID"), owner_name)
@@ -156,8 +160,6 @@ class ChatRecordProcessor:
 
             for msg in chat_data.get("messages", []):
                 content = self._extract_arkme_content(msg)
-
-                # 彻底抛弃“我”，直接使用真实人名
                 is_send = msg.get("isSend", 0)
                 if is_send in [1, True]:
                     sender = owner_name
@@ -172,7 +174,7 @@ class ChatRecordProcessor:
         elif isinstance(chat_data, list):
             messages_to_process = chat_data
         else:
-            return [], owner_name
+            return [], owner_name, chat_type
 
         # ---------------------------------------------------------
         # 🌟 核心修复 1：终极防线 - 强制按时间正序排列
@@ -236,14 +238,14 @@ class ChatRecordProcessor:
             end_dt = datetime.strptime(group["end_time"], "%Y-%m-%d %H:%M:%S")
             group["duration"] = round((end_dt - start_dt).total_seconds() / 60, 1)
 
-        return grouped_records, owner_name
+        return grouped_records, owner_name, chat_type
 
     # ...[ convert_groups_to_docs, split_docs, vectorize_and_store, full_process, search 均保持原样不变！] ...
-    def convert_groups_to_docs(self, grouped_records: List[Dict], target_name: str = "未知", owner_name: str = "本机主人") -> List[Document]:
+    def convert_groups_to_docs(self, grouped_records: List[Dict], target_name: str = "未知", owner_name: str = "本机主人", chat_type: str = "私聊") -> List[Document]:
         docs = []
         for group_idx, group in enumerate(grouped_records):
             # 🌟 上帝视角注入：让向量模型一眼看穿这是谁的聊天！
-            lines = [f"【对话场景：这是提问的主人({owner_name}) 与 聊天对象({target_name}) 的微信聊天片段】"]
+            lines = [f"【对话场景：这是提问的主人({owner_name}) 参与的 {chat_type}({target_name}) 的聊天片段】"]
 
             for t, s, c in group["messages"]:
                 if s in ["我", owner_name]:
@@ -259,6 +261,7 @@ class ChatRecordProcessor:
             metadata = {
                 "owner_name": owner_name,
                 "target_name": target_name,  # 存入元数据，方便以后做精确过滤
+                "chat_type": chat_type,
                 "start_time": group["start_time"],
                 "end_time": group["end_time"],
                 "date": group["start_time"].split(" ")[0],
@@ -307,10 +310,10 @@ class ChatRecordProcessor:
 
     def full_process(self, chat_file_path: str, time_window: int = 5, overwrite: bool = False, target_name: str = "对方", owner_name: str = "本机主人"):
         print(f"开始加载聊天记录：{chat_file_path}")
-        grouped_records, parsed_owner = self.load_and_group_chat_records(chat_file_path, time_window, target_name=target_name, fallback_owner=owner_name)
+        grouped_records, parsed_owner, chat_type = self.load_and_group_chat_records(chat_file_path, time_window, target_name=target_name, fallback_owner=owner_name)
         print(f"✅ 完成分组：共{len(grouped_records)}个聊天分组")
 
-        docs = self.convert_groups_to_docs(grouped_records, target_name=target_name, owner_name=parsed_owner)
+        docs = self.convert_groups_to_docs(grouped_records, target_name=target_name, owner_name=parsed_owner, chat_type=chat_type)
         split_docs = self.split_docs(docs)
         collection = self.vectorize_and_store(split_docs, overwrite)
 
