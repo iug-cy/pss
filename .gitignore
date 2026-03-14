@@ -1,0 +1,22 @@
+# 虚拟环境
+pss_env/
+venv/
+.env/
+# 本地模型与向量数据库
+pss_md/models/
+chroma_db/
+# 个人数据与临时文件
+data/
+temp/
+
+*.log
+# Python 缓存
+__pycache__/
+*.py[cod]
+*$py.class
+# IDE 配置
+.idea/
+.vscode/
+# 操作系统文件
+.DS_Store
+Thumbs.db

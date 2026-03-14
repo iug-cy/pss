@@ -1,0 +1,12 @@
+[project]
+name = "pss"
+version = "1.0.0"
+description = "私人微信聊天记录搜索引擎"
+requires-python = ">=3.10, <3.11"
+authors = [
+    { name = "iug-cy" }
+]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
