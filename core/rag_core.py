@@ -1,0 +1,333 @@
+import os
+import re
+import sys
+
+# 🌟 核心修复 1：把环境变量注入提到了最前面，解决根目录 config 找不到的问题
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import json
+import time
+import datetime
+import pandas as pd
+from docx import Document as DocxDocument
+import ollama
+
+# 🌟 核心修复 2：加上 "core."，使用绝对路径导入
+from core.weflow_client import WeFlowAPIClient
+from core.process import ChatRecordProcessor
+# ========== 导入config配置 ==========
+from config import LLM_MODEL_DEFAULT, SEARCH_TOP_K, CHAT_HISTORY_MAX_LEN
+
+
+class PrivateMemoryAssistant:
+    """
+    私人记忆助手核心类。
+    封装了数据导入（本地文件/API）、向量化、RAG 搜索和 LLM 问答。
+    """
+
+    def __init__(self, llm_model: str = 'qwen2.5:7b'):
+        self.llm_model = llm_model
+        # 初始化你写的底层处理器
+        self.processor = ChatRecordProcessor()
+        # 初始化 API 客户端
+        self.api_client = WeFlowAPIClient()
+        # 多轮对话记忆列表
+        self.chat_history = []
+
+    def import_from_export_dir(self, target_name: str, export_dir: str) -> tuple:
+        """
+        【本地智能体核心】：自动扫描 WeFlow 的导出目录，寻找目标人物的文件并导入
+        """
+        self.chat_history.clear()
+
+        if not os.path.exists(export_dir):
+            return False, f"❌ 导出目录不存在: {export_dir}，请在左侧侧边栏配置正确的路径。"
+
+        # 1. 在目录中进行模糊搜索
+        matched_files = []
+        for file_name in os.listdir(export_dir):
+            # 只要文件名包含目标人物的名字，且是 json 文件，就抓取
+            if target_name in file_name and file_name.endswith('.json'):
+                matched_files.append(os.path.join(export_dir, file_name))
+
+        if not matched_files:
+            return False, f"❌ 未在导出目录中找到包含【{target_name}】的聊天记录。\n请确认您是否已在 WeFlow 软件中将其导出。"
+
+        # 2. 如果找到多个，默认取第一个（通常是最匹配的）
+        target_file = matched_files[0]
+
+        # 3. 复用我们极其成熟的本地导入逻辑
+        try:
+            # 这里的 alias 直接用用户输入的名字
+            import_msg = self.import_local_file(target_file, alias=target_name)
+            return True, f"📁 自动定位到文件：`{os.path.basename(target_file)}`\n\n{import_msg}"
+        except Exception as e:
+            return False, f"❌ 自动导入失败: {e}"
+
+    def import_local_file(self, file_path: str, alias: str = None) -> str:
+        self.chat_history.clear()# 🌟 核心防串戏：导入新文件时，清空上一个人的聊天记忆
+        """支持导入 txt, csv, xlsx, docx, json"""
+        if not os.path.exists(file_path):
+            return f"❌ 找不到文件: {file_path}"
+        # 如果没有指定备注，就用文件名当备注
+        target_name = alias or os.path.basename(file_path).split('.')[0].replace("私聊_", "")
+        ext = os.path.splitext(file_path)[-1].lower()
+
+        # 1. 如果是微信导出的 JSON，直接走专门的聊天处理通道
+        if ext == '.json':
+            result = self.processor.full_process(chat_file_path=file_path, time_window=30,target_name=target_name)
+            return f"✅ 成功处理微信 JSON！生成了 {result['split_doc_count']} 个记忆记忆块。本机主人被识别为：【{result.get('owner_name')}】"
+
+        # 2. 如果是其他普通文档，走基础读取通道
+        docs_content = []
+        try:
+            if ext == '.txt':
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    docs_content = [line.strip() for line in f if line.strip()]
+            elif ext in ['.csv', '.xlsx', '.xls']:
+                df = pd.read_csv(file_path) if ext == '.csv' else pd.read_excel(file_path)
+                docs_content = df.astype(str).fillna('').agg(' '.join, axis=1).tolist()
+            elif ext == '.docx':
+                doc = DocxDocument(file_path)
+                docs_content = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
+            else:
+                return f"❌ 不支持的文件格式: {ext}"
+
+            if not docs_content:
+                return "⚠️ 文件为空或读取失败。"
+
+            # 生成向量并存入数据库 (复用 processor 的 Chroma 客户端)
+            current_time = int(time.time())
+            ids = [f"file_{current_time}_{i}" for i in range(len(docs_content))]
+            embeddings = self.processor.embed_model.encode(docs_content).tolist()
+
+            # 这里补充一点元数据
+            metadatas = [{"source": os.path.basename(file_path)} for _ in range(len(docs_content))]
+
+            self.processor.collection.add(
+                ids=ids,
+                documents=docs_content,
+                embeddings=embeddings,
+                metadatas=metadatas
+            )
+            return f"✅ 成功导入补充文档！共 {len(docs_content)} 条数据。"
+
+        except Exception as e:
+            return f"❌ 导入文件出错: {e}"
+
+    def import_from_weflow_api(self, wxid: str, alias: str = None, limit: int = 5000) -> str:
+        """通过 API 自动获取并入库"""
+        self.chat_history.clear()  # 🌟 核心防串戏：切换 API 导入对象时，彻底清空多轮对话记忆
+        # 注意：这里现在拿到的是一个清洗后的 List
+        api_name, owner_name, data_list = self.api_client.fetch_messages(wxid, limit)
+
+        if not data_list:
+            return "❌ 未获取到有效数据，请检查 wxid 或 WeFlow API 状态。"
+
+        # 如果用户手动输入了备注，优先使用用户的备注
+        final_target_name = alias or api_name
+
+        # 将获取到的列表存为临时 JSON 给 process.py 读取
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        temp_dir = os.path.join(base_dir, "..", "temp")
+        os.makedirs(temp_dir, exist_ok=True)
+        temp_file = os.path.join(temp_dir, f"temp_api_{wxid}.json")
+
+        try:
+            with open(temp_file, "w", encoding="utf-8") as f:
+                json.dump(data_list, f, ensure_ascii=False)
+
+            result = self.processor.full_process(chat_file_path=temp_file, time_window=30, target_name=final_target_name, owner_name=owner_name)
+            # 调试完毕后可以删掉临时文件
+            # os.remove(temp_file)
+
+            return f"✅ API 同步成功！微信对话已拆分为 {result['split_doc_count']} 个语义块入库。"
+        except Exception as e:
+            return f"❌ API 数据处理失败: {e}"
+
+    def resolve_name_to_wxid(self, name: str) -> str:
+        """供前端 Agent 调用的接口：人名转 WXID"""
+        return self.api_client.find_wxid_by_name(name)
+
+    def clear_memory(self) -> str:
+        """清空向量库和当前对话记忆"""
+        try:
+            self.processor.chroma_client.delete_collection(self.processor.collection_name)
+            self.processor._collection = None
+            self.chat_history =[] # 同时清空多轮对话记忆
+            return "✅ 记忆库与对话上下文已彻底清空！"
+        except Exception as e:
+            return f"❌ 清空失败/已经是空的: {e}"
+
+    def _parse_time_intent(self, query: str) -> list:
+        """
+        像人类一样解析用户的各种时间黑话，转化为具体的 YYYY-MM-DD 列表
+        支持：今天、昨天、上周、3月10日、3月等
+        """
+        current_time = datetime.datetime.now()
+        target_dates = []
+        base_year = current_time.year
+        if re.search(r'(去年)', query):
+            base_year -= 1
+        elif re.search(r'(前年)', query):
+            base_year -= 2
+
+            # 1. 相对天数
+        if re.search(r'(今天|今日)', query):
+            target_dates.append(current_time.strftime("%Y-%m-%d"))
+        if re.search(r'(昨天|昨日)', query):
+            target_dates.append((current_time - datetime.timedelta(days=1)).strftime("%Y-%m-%d"))
+        if re.search(r'(前天)', query):
+            target_dates.append((current_time - datetime.timedelta(days=2)).strftime("%Y-%m-%d"))
+
+            # 2. 相对周数
+        if re.search(r'(上周|最近一周|这几天|这周|本周)', query):
+            for i in range(0, 8):
+                target_dates.append((current_time - datetime.timedelta(days=i)).strftime("%Y-%m-%d"))
+
+            # 3. 绝对具体日期 (例如：3月10日, 2026年3月10号)
+        date_pattern = r'(?:(\d{2,4})年)?(\d{1,2})月(\d{1,2})[日号]?'
+        for match in re.finditer(date_pattern, query):
+            y = int(match.group(1)) if match.group(1) else base_year
+            m = int(match.group(2))
+            d = int(match.group(3))
+            try:
+                target_dates.append(f"{y:04d}-{m:02d}-{d:02d}")
+            except ValueError:
+                pass
+
+        # 4. 绝对月份 (例如：去年3月, 3月份)
+        if not target_dates:
+            month_pattern = r'(?:(\d{2,4})年)?(\d{1,2})月份?'
+            for match in re.finditer(month_pattern, query):
+                y = int(match.group(1)) if match.group(1) else base_year
+                m = int(match.group(2))
+                for d in range(1, 32):
+                    try:
+                        datetime.datetime(y, m, d)
+                        target_dates.append(f"{y:04d}-{m:02d}-{d:02d}")
+                    except ValueError:
+                        pass
+
+        return list(set(target_dates))
+
+    def ask(self, question: str) -> dict:
+        """
+        核心问答接口：返回字典，包含大模型的回答和参考来源。
+        """
+        target_dates = self._parse_time_intent(question)
+
+        filter_dict = None
+        if len(target_dates) == 1:
+            filter_dict = {"date": target_dates[0]}
+        elif len(target_dates) > 1:
+            # ChromaDB 原生支持 $in 语法，完美支持“整个3月”或“上周”的多天过滤！
+            filter_dict = {"date": {"$in": target_dates}}
+
+        if target_dates:
+            # 取首尾日期展示给用户看，显得特别有科技感
+            target_dates.sort()
+            date_range_str = f"[{target_dates[0]}]" if len(
+                target_dates) == 1 else f"[{target_dates[0]} 至 {target_dates[-1]}]"
+            print(f"💡 NLP 解析成功！已启动强制时间结界，锁定查询范围: {date_range_str}")
+
+        try:
+            # 🌟 完美回归！使用你升级后的优雅封装接口，传入 where_filter！
+            search_results = self.processor.search(
+                query=question,
+                top_k=SEARCH_TOP_K,
+                where_filter=filter_dict
+            )
+        except Exception as e:
+            print(f"检索出错: {e}")
+            search_results = []
+
+        if not search_results:
+            time_tip = "在该特定时间段内" if target_dates else ""
+            return {
+                "answer": f"记忆库中未找到相关的线索。{time_tip}没有发生相关的聊天。",
+                "sources": [],
+                "raw_context": ""  # 🌟 补上这个空字段，满足前端的胃口
+            }
+        # 🌟 这里直接用你封装好的元数据，代码变得非常干净
+        dynamic_owner_name = search_results[0]['metadata'].get('owner_name', '本机主人')
+
+        context_parts = []
+        sources = []
+        for i, res in enumerate(search_results):
+            content = res['content']
+            meta = res['metadata']
+            time_range = f"{meta.get('start_time', '')} - {meta.get('end_time', '')}"
+            src_str = f"来源 {i + 1}: 与【{meta.get('target_name', '未知')}】的聊天 ({time_range})"
+            sources.append(src_str)
+            context_parts.append(f"--- 片段 {i + 1} ---\n{content}")
+
+        context_text = "\n\n".join(context_parts)
+
+        # 🌟【核心突破 2：自适应变通提示词】
+        # 放宽限制，让 AI 学会区分“时间敏感问题”和“普通事实问题”
+        system_prompt = f"""
+        你是一个逻辑极其严密的私人电子取证与记忆助理。请仔细阅读【参考聊天记录】并回答。
+
+        【核心法则】：
+        1. 身份感知：记录中明确标出了每个说话人的名字。“{dynamic_owner_name}” 就是向你提问的主人本人。
+        2. 聊天记录开头的【这是 {dynamic_owner_name} 与 XXX 的对话记录】提示了当前的对话对象。
+        3. 绝对真实：如果你提供的【参考聊天片段】里没有回答用户问题的证据，绝对禁止编造！直接回答“在这段时间内，聊天记录未提及...”。
+        【核心推理法则（必须严格遵守）】：
+        1. 🕵️ 跨会话第三方情报捕捉（极度重要！）：当用户询问“某人（如胡老师）的事”时，答案不仅可能在与该人的直接对话中，还极有可能隐藏在与“其他人（如谭同学、室友）”的聊天讨论中！
+        - 你必须仔细阅读所有片段的【内容】，绝不能因为片段头部是“与A的聊天”就忽略里面关于B的线索！
+        2. 🎭 角色代入：片段中出现的“我”代表用户本人。每段开头的【这是你与 XXX 的聊天片段】说明了当前对话的另一方是谁。
+        3. 严格遵循以下 XML 格式进行思考和作答。
+        
+        <thought>
+        - 梳理时间线和人物关系。
+        - 区分“{dynamic_owner_name}”说了什么，对方说了什么。
+        - 提取有效结论。
+        </thought>
+        <answer>
+        直接回答主人的问题。
+        </answer>
+
+        【参考聊天记录】：
+        {context_text}
+        """
+        messages_for_llm = [{'role': 'system', 'content': system_prompt}]
+        messages_for_llm.extend(self.chat_history)
+        messages_for_llm.append({'role': 'user', 'content': question})
+
+        try:
+            response = ollama.chat(
+                model=self.llm_model,
+                messages=messages_for_llm
+            )
+            raw_answer = response['message']['content']
+
+            # 解析结构化输出
+            thought_match = re.search(r'<thought>(.*?)</thought>', raw_answer, re.DOTALL)
+            answer_match = re.search(r'<answer>(.*?)</answer>', raw_answer, re.DOTALL)
+
+            if thought_match and answer_match:
+                thought_process = thought_match.group(1).strip()
+                final_answer = answer_match.group(1).strip()
+                answer = f"🧠【AI 逻辑分析】:\n{thought_process}\n\n🤖【最终结论】:\n{final_answer}"
+            else:
+                answer = raw_answer
+                final_answer = raw_answer
+
+            self.chat_history.append({'role': 'user', 'content': question})
+            self.chat_history.append({'role': 'assistant', 'content': final_answer})
+
+            if len(self.chat_history) > CHAT_HISTORY_MAX_LEN:
+                self.chat_history = self.chat_history[-CHAT_HISTORY_MAX_LEN:]
+
+        except Exception as e:
+            answer = f"⚠️ 模型调用失败: {e}"
+
+        return {
+            "answer": answer,
+            "sources": sources,
+            "raw_context": context_text
+        }
+
+    def get_db_stats(self):
+        return self.processor.collection.count()
