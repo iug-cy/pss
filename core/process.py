@@ -109,14 +109,15 @@ class ChatRecordProcessor:
 
         if msg_type == "文本消息":
             return raw_content
-        elif msg_type == "图片消息":
-            # 记录图片路径，后期可扩展 OCR
-            return f"[发送了一张图片，本地路径:{raw_content}]"
+        elif msg_type in ["图片消息", "视频消息", "语音消息"]:
+            # WeFlow 导出的多模态，其 raw_content 通常是相对路径，如 ../images/xxx.png
+            # 记录下来，方便日后直接溯源
+            return f"[发送了一份{msg_type}，本地存储路径或标识:{raw_content}]"
         elif msg_type in ["其他消息", "引用消息"]:
-            # Arkme 特性：自动提取出了文件名或链接标题，避免读取乱码 XML
+            # 微信的文件名通常藏在 musicTitle 或 title 里
             title = msg.get('musicTitle') or msg.get('finderTitle') or msg.get('title')
             if title:
-                return f"[{msg_type}：{title}]"
+                return f"[发送了一份文件/链接，文件名称为：{title}]"
             else:
                 return f"[{msg_type}：{raw_content}]"
         elif msg_type == "动画表情":

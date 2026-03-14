@@ -25,13 +25,21 @@ if "messages" not in st.session_state:
 
 def parse_intent(text: str):
     """NLP 意图识别引擎"""
-    cmd_match = re.match(r"^(同步|拉取|找找|导入)\s+(.+)$", text.strip())
-    if cmd_match:
-        return cmd_match.group(2).strip()
+    text = text.strip()
 
-    nlp_match = re.search(r"(同步|拉取|获取|找找).*?(与|和|跟)\s*([a-zA-Z0-9_\u4e00-\u9fa5]+)\s*的?聊天", text)
+    # 模式1: 自然语言长句 (例如："我想找找和谭启翔的聊天记录"、"同步一下跟老王的数据")
+    # 巧妙利用正则非贪婪匹配，精准抓取“和/跟/与”与“的”中间的名字
+    nlp_match = re.search(
+        r"(?:同步|拉取|获取|找|看).*?(?:与|和|跟)\s*([a-zA-Z0-9_\u4e00-\u9fa5]+?)\s*(?:的聊天|的记录|的对话|的数据)",
+        text)
     if nlp_match:
-        return nlp_match.group(3).strip()
+        return nlp_match.group(1).strip()
+
+    # 模式2: 短指令，容忍无空格 (例如："同步谭启翔", "拉取 张三", "导入王老师")
+    cmd_match = re.match(r"^(?:同步|拉取|导入|更新|查找)\s*([a-zA-Z0-9_\u4e00-\u9fa5]+)$", text)
+    if cmd_match:
+        return cmd_match.group(1).strip()
+
     return None
 
 
