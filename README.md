@@ -10,6 +10,7 @@
 - Web UI
 
 ![img.png](index.png)
+![img.png](img.png)
 ---
 
 # 环境要求
