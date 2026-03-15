@@ -1,7 +1,6 @@
 # bootstrap.py
 import sys
 import os
-from pathlib import Path
 import subprocess
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -32,7 +31,6 @@ def auto_install_model():
 
         from modelscope.hub.snapshot_download import snapshot_download
 
-        # 执行下载
         snapshot_download(
             model_id=MODEL_ID,
             local_dir=str(LOCAL_MODEL_DIR)

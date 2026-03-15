@@ -21,7 +21,7 @@ def main():
     print("   (例如: api wxid_rx37zsnsox6f22)")
     print("2. 输入 'import <文件路径>' : 手动导入本地 JSON/CSV/TXT/DOCX 文件")
     print("   (例如: import 私聊_Arkme.json)")
-    print("3. 输入 'clear' : 🧹 彻底清空当前记忆库 (避免占空间/回答混乱)")
+    print("3. 输入 'clear' : 🧹 彻底清空当前记忆库")
     print("4. 输入 'quit' : 退出程序")
     print("5. 直接输入其他内容 : 进行语义问答")
     print("-" * 60)

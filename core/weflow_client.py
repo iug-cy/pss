@@ -1,7 +1,6 @@
 # core/weflow_client.py
 import requests
 import time
-import sys
 import os
 
 from config import WEFLOW_API_URL

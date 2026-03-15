@@ -19,7 +19,7 @@ WEFLOW_API_URL = "http://127.0.0.1:5031" # WeFlow 后台 API 服务地址
 DB_PATH = BASE_DIR / "chroma_db"        # 向量库路径
 COLLECTION_NAME = "chat_history"        # 向量库集合名
 
-# ===================== 业务参数配置 =====================
+# 业务参数配置
 TIME_WINDOW_DEFAULT = 30    # 聊天分组时间窗口（分钟）
 SEARCH_TOP_K = 8            # RAG检索条数
 CHAT_HISTORY_MAX_LEN = 4    # 多轮对话记忆长度

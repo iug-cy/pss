@@ -9,7 +9,6 @@ from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 import uuid
 
-# ========== 导入config配置（替换原有硬编码） ==========
 from config import DB_PATH, COLLECTION_NAME, LOCAL_MODEL_DIR
 
 class ChatRecordProcessor:
@@ -65,7 +64,6 @@ class ChatRecordProcessor:
 
     @property
     def collection(self) -> chromadb.Collection:
-        """获取或创建集合"""
         if self._collection is None:
             self._collection = self.chroma_client.get_or_create_collection(name=self.collection_name)
         return self._collection
@@ -179,7 +177,6 @@ class ChatRecordProcessor:
                 time_str = current_time.strftime("%Y-%m-%d %H:%M:%S")
 
             if not current_group:
-                # 🌟 修复: 必须存入 time_str
                 current_group = {"messages": [(time_str, sender, content)], "senders": {sender}, "start_time": time_str,
                                  "end_time": time_str, "type": msg_type, "last_time": current_time, "msg_count": 1}
                 continue

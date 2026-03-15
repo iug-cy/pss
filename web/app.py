@@ -23,17 +23,17 @@ if "messages" not in st.session_state:
 def parse_intent(text: str):
     """NLP 意图识别引擎"""
     text = text.strip()
-    # 模式1: 自然语言长句
+    # 自然语言长句
     nlp_match = re.search(r"(?:同步|拉取|获取|找|看).*?(?:与|和|跟)\s*([a-zA-Z0-9_\u4e00-\u9fa5]+?)\s*(?:的聊天|的记录|的对话|的数据)", text)
     if nlp_match:
         return nlp_match.group(1).strip()
-    # 模式2: 短指令
+    # 短指令
     cmd_match = re.match(r"^(?:同步|拉取|导入|更新|查找)\s*([a-zA-Z0-9_\u4e00-\u9fa5]+)$", text)
     if cmd_match:
         return cmd_match.group(1).strip()
     return None
 
-# ================= 侧边栏布局 =================
+# 侧边栏布局
 with st.sidebar:
     st.title("🧠 私人数字记忆助理")
     st.caption("基于本地文档的跨会话知识检索系统")
@@ -72,7 +72,7 @@ with st.sidebar:
                 time.sleep(1)
                 st.rerun()
 
-# ================= 主聊天区域 =================
+# 主聊天区域
 st.header("💬 记忆检索引擎")
 
 if not st.session_state.messages:

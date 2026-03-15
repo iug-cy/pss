@@ -14,23 +14,15 @@ from core.process import ChatRecordProcessor
 from config import LLM_MODEL_DEFAULT, SEARCH_TOP_K, CHAT_HISTORY_MAX_LEN
 
 class PrivateMemoryAssistant:
-    """
-    私人记忆助手核心类。
-    封装了数据导入（本地文件/API）、向量化、RAG 搜索和 LLM 问答。
-    """
-
     def __init__(self, llm_model: str = 'qwen2.5:7b'):
         self.llm_model = llm_model
-        # 初始化你写的底层处理器
         self.processor = ChatRecordProcessor()
-        # 初始化 API 客户端
         self.api_client = WeFlowAPIClient()
-        # 多轮对话记忆列表
         self.chat_history = []
 
     def import_from_export_dir(self, target_name: str, export_dir: str) -> tuple:
         """
-        【本地智能体核心】：自动扫描 WeFlow 的导出目录，寻找目标人物的文件并导入
+        自动扫描 WeFlow 的导出目录，寻找目标人物的文件并导入
         """
         self.chat_history.clear()
 
@@ -88,7 +80,7 @@ class PrivateMemoryAssistant:
             if not docs_content:
                 return "⚠️ 文件为空或读取失败。"
 
-            # 生成向量并存入数据库 (复用 processor 的 Chroma 客户端)
+            # 生成向量并存入数据库(复用 processor的Chroma客户端)
             current_time = int(time.time())
             ids = [f"file_{current_time}_{i}" for i in range(len(docs_content))]
             embeddings = self.processor.embed_model.encode(docs_content).tolist()
@@ -149,9 +141,7 @@ class PrivateMemoryAssistant:
             return f"❌ 清空失败/已经是空的: {e}"
 
     def _delete_old_records(self, target_name: str):
-        """ 覆盖更新机制：导入新数据前，精准抹除该对象的所有旧记忆"""
         try:
-            # 利用 ChromaDB 的 where 过滤删除功能
             self.processor.collection.delete(where={"target_name": target_name})
             print(f"♻️ 已自动清理【{target_name}】的历史旧数据，准备覆写新记忆...")
         except Exception:
@@ -159,7 +149,7 @@ class PrivateMemoryAssistant:
 
     def _parse_time_intent(self, query: str) -> list:
         """
-        像人类一样解析用户的各种时间黑话，转化为具体的 YYYY-MM-DD 列表
+        精确时间信息，强化搜索
         """
         current_time = datetime.datetime.now()
         target_dates = []
@@ -231,7 +221,6 @@ class PrivateMemoryAssistant:
         elif "群聊" in question:
             where_clauses.append({"chat_type": "群聊"})
 
-        # 组装为 Chroma 要求的最终格式
         filter_dict = None
         if len(where_clauses) == 1:
             filter_dict = where_clauses[0]
