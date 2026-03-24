@@ -1,0 +1,188 @@
+* {
+    box-sizing: border-box;
+}
+
+/* 全局主背景：暖杏色柔和底色*/
+.stApp {
+    background-color: #FFF8F0;
+    color: #3E2723;
+    font-family: "Microsoft YaHei", "Source Han Sans SC", sans-serif;
+}
+
+.stAppHeader {
+    background-color: #FFF8F0 !important;
+    border-bottom: none !important;
+}
+.stAppHeader svg, .stAppHeader button {
+    color: #5D4037 !important;
+}
+
+.stMainBlockContainer {
+    background-color: #FFF8F0 !important;
+    padding-top: 2rem !important;
+}
+
+.stBlockContainer {
+    background-color: transparent !important;
+}
+
+.stSidebar {
+    background-color: #F5EBE0 !important;
+}
+.stSidebarContent {
+    background-color: #F5EBE0 !important;
+    padding-top: 2rem !important;
+}
+.stSidebar h1, .stSidebar h2, .stSidebar h3, .stSidebar p, .stSidebar label, .stSidebar caption {
+    color: #3E2723;
+}
+.stSidebar hr {
+    border-color: #D7CCC8;
+    opacity: 0.6;
+}
+
+h1, h2, h3, h4, h5, h6 {
+    color: #5D4037;
+    font-weight: 600;
+}
+
+hr {
+    border-color: #D7CCC8;
+    opacity: 0.6;
+}
+
+.stTextInput input, .stTextArea textarea, .stFileUploader > div {
+    background-color: #FFFAF5;
+    border: 1px solid #D7CCC8;
+    border-radius: 8px;
+    color: #3E2723;
+    transition: all 0.3s ease;
+}
+.stTextInput input:focus, .stTextArea textarea:focus {
+    border-color: #E67E22;
+    box-shadow: 0 0 0 2px rgba(230, 126, 34, 0.2);
+}
+
+.stButton button {
+    background-color: #E67E22;
+    color: white;
+    border-radius: 8px;
+    border: none;
+    padding: 0.5rem 1rem;
+    font-weight: 500;
+    transition: all 0.3s ease;
+    width: 100%;
+}
+.stButton button:hover {
+    background-color: #D35400;
+    box-shadow: 0 4px 8px rgba(211, 84, 0, 0.2);
+}
+
+.stMetric {
+    background-color: #FFFAF5;
+    padding: 1rem;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    border: 1px solid #F0E6DD;
+}
+.stMetric label {
+    color: #5D4037 !important;
+}
+.stMetric div[data-testid="stMetricValue"] {
+    color: #E67E22 !important;
+    font-weight: 700;
+}
+
+/* 聊天消息气泡优化：区分用户/助手，暖调分层，无突兀白边 */
+.stChatMessage {
+    border-radius: 12px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    padding: 1rem;
+    margin-bottom: 0.8rem;
+    border: none;
+}
+/* 用户消息气泡：暖橙浅底色 */
+.stChatMessage[data-testid="stChatMessage-user"] {
+    background-color: #FBE9D7;
+}
+/* 助手消息气泡：暖白底色 */
+.stChatMessage[data-testid="stChatMessage-assistant"] {
+    background-color: #FFFAF5;
+}
+
+/* 提示框样式优化：全暖色调适配，和整体融合不突兀 */
+.stAlert {
+    border-radius: 10px;
+    border: none;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+/* 信息提示框：暖黄底色，和主背景完全融合 */
+.stAlert-info {
+    background-color: #FEF3E2;
+    color: #784212;
+    border-left: 4px solid #F5B041;
+}
+/* 成功提示框：暖绿底色 */
+.stAlert-success {
+    background-color: #EDF7ED;
+    color: #1B5E20;
+    border-left: 4px solid #4CAF50;
+}
+/* 错误提示框：暖红底色 */
+.stAlert-error {
+    background-color: #FDEDED;
+    color: #B71C1C;
+    border-left: 4px solid #F44336;
+}
+
+/* 折叠展开框优化：暖调适配，无突兀白边 */
+.stExpander {
+    background-color: #FFFAF5;
+    border: 1px solid #D7CCC8;
+    border-radius: 8px;
+    margin-top: 0.5rem;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.03);
+}
+.stExpander summary {
+    color: #5D4037;
+    font-weight: 500;
+}
+
+/* 代码块样式优化：暖调背景 */
+.stCodeBlock {
+    background-color: #FFFAF5;
+    border-radius: 6px;
+    border: 1px solid #D7CCC8;
+}
+
+/* 底部聊天输入框优化：彻底解决底部白框突兀问题，和主背景完全融合 */
+.stChatInputContainer {
+    background-color: #FFF8F0 !important;
+    padding: 1rem 0 !important;
+    border: none !important;
+}
+.stChatInputContainer > div {
+    background-color: #FFFAF5;
+    border: 1px solid #D7CCC8;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+}
+/* 覆盖输入框底部的空白容器，彻底消除白块 */
+.stMain > div:last-child {
+    background-color: #FFF8F0 !important;
+}
+
+/* 状态组件（同步进度条）优化：暖调适配 */
+.stStatus {
+    background-color: #FFFAF5;
+    border-radius: 8px;
+    border: 1px solid #D7CCC8;
+}
+.stStatus header {
+    color: #5D4037;
+}
+
+/* 文件上传组件优化：暖调适配，无白边 */
+.stFileUploader {
+    background-color: transparent;
+}

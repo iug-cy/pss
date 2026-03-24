@@ -79,7 +79,7 @@ def init_environment():
     WEFLOW_EXPORT_DIR.mkdir(parents=True, exist_ok=True)
 
     print(f"✅ 系统目录就绪。")
-    print("=" * 50)
+
 
 if __name__ == "__main__":
     init_environment()

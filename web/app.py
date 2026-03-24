@@ -6,10 +6,24 @@ import re
 import time
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from bootstrap import init_environment
+init_environment()
+
 from core.rag_core import PrivateMemoryAssistant
 from config import BASE_DIR, WEFLOW_EXPORT_DIR, TEMP_DIR
 
-st.set_page_config(page_title="私人数字记忆助理", page_icon="🧠", layout="wide")
+st.set_page_config(page_title="个人IM记忆增强与智能检索系统", page_icon="🧠", layout="wide")
+
+# 样式加载
+def local_css(file_name):
+    """读取并注入本地CSS文件"""
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    css_path = os.path.join(current_dir, file_name)
+    with open(css_path, encoding="utf-8") as f:
+        st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
+
+# local_css("style.css")
 
 @st.cache_resource
 def get_assistant():
@@ -35,8 +49,8 @@ def parse_intent(text: str):
 
 # 侧边栏布局
 with st.sidebar:
-    st.title("🧠 私人数字记忆助理")
-    st.caption("基于本地文档的跨会话知识检索系统")
+    st.title("🧠 个人IM记忆增强与智能检索系统")
+    st.caption("基于本地模型的跨会话知识检索系统")
 
     st.markdown("---")
     st.subheader("⚙️ 自动化配置")
@@ -78,9 +92,9 @@ st.header("💬 记忆检索引擎")
 if not st.session_state.messages:
     st.info("""
     **💡 智能体工作流指南：**
-    1. 请先在 WeFlow 软件中，勾选需要的联系人**导出记录**（选择 Arkme JSON 格式）到左侧配置的文件夹中。
+    1. 请先在WeFlow软件中，勾选需要的联系人**导出记录**（选择Arkme JSON格式）到左侧配置的文件夹中。
     2. 在下方直接对我说：**`同步 XXX`** 或 **`找找和XXX的聊天`**。
-    3. 系统将自动在后台扫描该文件夹、解析多模态数据并无缝构建记忆！
+    3. 系统将自动在后台扫描该文件夹、解析多模态数据并构建专属记忆！
     """)
 
 for msg in st.session_state.messages:

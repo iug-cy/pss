@@ -25,14 +25,14 @@ class PrivateMemoryAssistant:
         自动扫描 WeFlow 的导出目录，寻找目标人物的文件并导入
         """
         self.chat_history.clear()
-
+        os.makedirs(export_dir, exist_ok=True)
         if not os.path.exists(export_dir):
-            return False, f"❌ 导出目录不存在: {export_dir}，请在左侧侧边栏配置正确的路径。"
+            return False, f"❌ 导出目录不存在，且自动创建失败: {export_dir}，请在左侧侧边栏配置正确的路径。"
 
         # 1. 在目录中进行模糊搜索
         matched_files = []
         for file_name in os.listdir(export_dir):
-            # 只要文件名包含目标人物的名字，且是 json 文件，就抓取
+            # 只要文件名包含目标人物的名字，且是json文件，就抓取
             if target_name in file_name and file_name.endswith('.json'):
                 matched_files.append(os.path.join(export_dir, file_name))
 
