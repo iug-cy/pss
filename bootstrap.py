@@ -2,10 +2,16 @@
 import sys
 import os
 import subprocess
+import platform
 
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from config import LOCAL_MODEL_DIR, MODEL_ID, DB_PATH, TEMP_DIR, WEFLOW_EXPORT_DIR
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(BASE_DIR)
 
+try:
+    from config import LOCAL_MODEL_DIR, MODEL_ID, DB_PATH, TEMP_DIR, WEFLOW_EXPORT_DIR, LLM_MODEL_DEFAULT
+except ImportError:
+    print("错误：无法导入 config 模块，请检查项目结构")
+    sys.exit(1)
 
 def auto_install_model():
     """自动检查并下载模型到 pss_md/models"""
@@ -31,9 +37,15 @@ def auto_install_model():
 
         from modelscope.hub.snapshot_download import snapshot_download
 
+        # 添加进度显示
+        def progress_callback(percentage, downloaded_size, total_size):
+            sys.stdout.write(f"\r下载进度: {percentage:.1f}% ({downloaded_size/1024/1024:.1f}MB/{total_size/1024/1024:.1f}MB)")
+            sys.stdout.flush()
+
         snapshot_download(
             model_id=MODEL_ID,
-            local_dir=str(LOCAL_MODEL_DIR)
+            local_dir=str(LOCAL_MODEL_DIR),
+            progress_callback=progress_callback
         )
         print("\n✅ 本地模型下载并部署完成！\n")
         return True
