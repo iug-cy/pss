@@ -273,30 +273,38 @@ class PrivateMemoryAssistant:
 
         context_text = "\n\n".join(context_parts)
 
+        if len(context_text) > 5000:
+            context_text = context_text[:5000] + "\n...[为保护内存，次要参考记录已被自动折叠]..."
+
         system_prompt = f"""
-        你是一个逻辑极其严密的私人记忆助理。请仔细阅读【参考聊天记录】并回答。
+        你是一个逻辑极其严密、擅长抽丝剥茧的私人记忆助理。请仔细阅读【参考聊天记录】并回答。
         {fallback_warning}
         【核心推理法则（必须严格遵守）】：
-        1. 🕵️ 跨会话第三方情报捕捉（极度重要！）：当用户询问“某人（如胡老师）的事”时，答案不仅可能在与该人的直接对话中，还极有可能隐藏在与“其他人”的聊天讨论中！
+        1. 🕵️ 跨会话情报捕捉（极度重要！）：当用户询问“某人的事”时，答案不仅可能在与该人的直接对话中，还极有可能隐藏在与“其他人”的聊天讨论中！
         - 你必须仔细阅读所有片段的【内容】，绝不能因为片段头部是“与A的聊天”就忽略里面关于B的线索！
         2. 🎭 角色代入：片段中出现的“我”代表用户本人。每段开头的【这是你与 XXX 的聊天片段】说明了当前对话的另一方是谁。
         
         【极度重要法则】：
         1. 身份绑定：“{dynamic_owner_name}” 是向你提问的主人。
-        2. 场景隔离：仔细阅读片段开头的【对话场景】。如果主人问“私聊里发的”，你绝不能拿“群聊”的记录去充数！
+        2. 场景隔离：仔细阅读片段开头的【对话场景】。如果主人问“私聊里发的”，你绝不能拿“群聊”的记录去充数！提问中只提到“今年”，就绝对不能出现今年以前的回答；提到“最近”，则必须优先考虑时间最近的答案！
         3. 绝对真实：如果你提供的【参考聊天片段】里没有回答用户问题的证据，绝对禁止编造！直接回答“在这段时间内，聊天记录未提及...”。
-        4. 📁 文件与多模态寻回（重要）：如果主人在寻找某个文件、安装包、图片或视频（如“他发给我的安装包叫什么”、“上次那张图片在哪”），你必须在记录中仔细寻找包含【发送了一份文件/链接，文件名称为：...】或【本地存储路径或标识:...】的内容，并**在回答中明确写出该文件的准确名称或路径**！
-        5. 严格遵循以下 XML 格式进行思考和作答。
+        4. 文件与多模态寻回（重要）：如果主人在寻找某个文件、安装包、图片或视频（如“他发给我的安装包叫什么”、“上次那张图片在哪”），你必须在记录中仔细寻找包含【发送了一份文件/链接，文件名称为：...】或【本地存储路径或标识:...】的内容，并**在回答中明确写出该文件的准确名称或路径**！
+        5. 绝对客观：聊天记录中经常出现“讨论A方案”最后“决定B方案”的情况。你不能只看提及次数最多的词，必须按照【时间顺序】理清决策脉络！
+        6. 寻找终局：注意寻找“决定”、“行”、“买”、“交给你了”等表示最终决定的词汇，作为判断事件结果的最终依据。
+        
+        你必须严格遵循以下 XML 格式进行思考和作答。
         
         <thought>
-        - 主人问的是私聊还是群聊？问的是什么时间？有没有触发【系统重要警告】？
-        - 如果是寻物，提取出对应的文件名或路径。
+        - 主人究竟想问什么？（提炼出核心问题）问的是什么时间？有没有触发【系统重要警告】？
         - 区分“{dynamic_owner_name}”说了什么，对方说了什么。
+        - 如果是寻物，提取出对应的文件名或路径。
+        - 候选提取：在记录中，提到了哪些可能的候选选项？（比如提到了哪几座山、哪几个方案）
+        - 时序追踪与反转：按照时间顺序，这些选项经历了怎样的讨论？有没有被否决的选项？最后定下来的是哪一个？
         - 分析参考片段中的场景和时间是否吻合。
         - 提取有效结论。
         </thought>
         <answer>
-        直接回答主人的问题，如果是找文件请务必提供文件名或路径。
+        直接、清晰、准确地回答主人的问题，如果聊天中经过了讨论才做出决定，请在回答中简单说明最终选择的理由。如果是找文件请务必提供文件名或路径。
         </answer>
 
         【参考聊天记录】：
@@ -309,7 +317,8 @@ class PrivateMemoryAssistant:
         try:
             response = ollama.chat(
                 model=self.llm_model,
-                messages=messages_for_llm
+                messages=messages_for_llm,
+                options={'num_ctx': 8192}
             )
             raw_answer = response['message']['content']
 
@@ -330,6 +339,15 @@ class PrivateMemoryAssistant:
 '</thought>', '').strip()
                 answer = final_answer
 
+            # =====================================================================
+            # 🛡️ 物理防爆盾 3：历史记忆动态压缩 (History Compression)
+            # RAG 系统的本质是每次带上资料去问，没必要把上一次 AI 啰嗦的长篇大论全记下来！
+            # 存入聊天历史时，如果大模型的回答超过 200 字，自动生成摘要存入历史。
+            # =====================================================================
+            history_answer_to_save = final_answer
+            if len(history_answer_to_save) > 200:
+                history_answer_to_save = history_answer_to_save[:200] + "..."
+
             self.chat_history.append({'role': 'user', 'content': question})
             self.chat_history.append({'role': 'assistant', 'content': final_answer})
 
@@ -347,3 +365,95 @@ class PrivateMemoryAssistant:
 
     def get_db_stats(self):
         return self.processor.collection.count()
+
+    def get_dashboard_data(self) -> dict:
+        """
+        【数字记忆大屏接口】：统计当前记忆库中不同联系人的记忆块分布
+        返回字典格式，例如 {"谭启翔": 45, "胡老师": 12}
+        """
+        try:
+            # 获取数据库中所有的元数据
+            data = self.processor.collection.get(include=["metadatas"])
+            if not data or not data["metadatas"]:
+                return {}
+
+            counter = {}
+            for meta in data["metadatas"]:
+                name = meta.get("target_name", "未知")
+                counter[name] = counter.get(name, 0) + 1
+            return counter
+        except Exception as e:
+            print(f"获取大屏数据失败: {e}")
+            return {}
+
+    def generate_structured_knowledge(self, target_name: str, template_type: str = "电子证据链提炼 (Evidence Chain)") -> str:
+        """
+        【多模板知识蒸馏接口】：根据用户选择的场景，动态生成不同视角的结构化内容
+        """
+        try:
+            # 限制召回数量防 OOM
+            search_results = self.processor.collection.query(
+                query_embeddings=self.processor.embed_model.encode("任务 安排 计划 待办 总结 进度 经过 承诺 钱 款项 同意 确认 纠纷 违约 密码 文件 进展").tolist(),
+                n_results=8,
+                where={"target_name": target_name}
+            )
+
+            if not search_results.get("documents") or not search_results["documents"][0]:
+                return "暂无足够的历史记录来生成知识大纲。"
+
+            context_parts = []
+            for i, content in enumerate(search_results["documents"][0]):
+                meta = search_results["metadatas"][0][i]
+                context_parts.append(f"[{meta.get('start_time', '')}]片段:\n{content}")
+            context_text = "\n\n".join(context_parts)
+
+            if len(context_text) > 3000:
+                context_text = context_text[:3000] + "\n...[历史记录已被截断]..."
+
+            # 🌟 核心：多套 Prompt 模板路由
+            if template_type == "电子证据链提炼 (Evidence Chain)":
+                prompt = f"""
+                你是一位专业的法务电子取证助理。请严谨阅读以下与【{target_name}】的历史记录。
+                任务：客观、中立地提取其中可能涉及承诺、资金、协议、争议或事实确认的关键对话，构建时间轴证据链。
+
+                请严格按照以下 Markdown 输出：
+                ### ⚖️ 电子证据链梳理 (与 {target_name})
+                **1. 核心事实/争议焦点：** (简述这段记录中双方主要围绕什么事情展开)
+                **2. 关键承诺与确认：** (提取出“同意”、“行”、“我转你”等确权词汇及对应的上下文)
+                **3. ⏱️ 行为时间轴：**
+                - **[YYYY-MM-DD HH:MM]** 发生了什么（必须保持客观陈述，勿加主观猜测）
+
+                【历史记录】：\n{context_text}"""
+
+
+            elif template_type == "企业合规风险审计 (Audit)":
+                prompt = f"""
+                你是企业内部数据合规审计员。请阅读以下与【{target_name}】的记录。
+                任务：审查其中是否存在泄露账号密码、内部文件外发、违规承诺或其他异常行为。
+                请严格按照以下 Markdown 输出：
+                ### 🛡️ 合规风险审计报告
+                - **🔴 高危风险点：** (如有提及密码、涉密文件、异常资金，请重点标出；如无则写“暂未发现明显高危风险”)
+                - **📄 涉密文件与资产轨迹：** (提取记录中出现过的文件名称及路径)
+                - **💡 审计建议：** (针对上述情况给出简要管理建议)
+
+                【历史记录】：\n{context_text}"""
+
+            else:  # 默认：项目周报/会议纪要
+                prompt = f"""你是高效的生活/工作助理。请阅读与【{target_name}】的历史记录。
+                任务：梳理近期事件脉络，并提炼未完成的待办事项。
+                请按照以下 Markdown 输出：
+                ### 📌 核心待办 (Action Items)
+                - [ ] 事项1 (提取自某年某月)
+                ### ⏱️ 事件脉络回顾
+                - **[YYYY-MM-DD]** 关键事件描述
+                
+                【历史记录】：\n{context_text}"""
+
+            response = ollama.chat(
+                model=self.llm_model,
+                messages=[{'role': 'user', 'content': prompt}],
+                options={'num_ctx': 8192}
+            )
+            return response['message']['content']
+        except Exception as e:
+            return f"❌ 知识蒸馏生成失败: {e}"

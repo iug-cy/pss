@@ -17,7 +17,7 @@ def main():
     print("=" * 60)
 
     print("\n【操作指南】")
-    print("1. 输入 'api <wxid>' : 通过 WeFlow API 自动抓取指定好友记录入库")
+    print("1. 输入 'api <wxid>' : 通过WeFlow API自动抓取指定好友记录入库")
     print("   (例如: api wxid_rx37zsnsox6f22)")
     print("2. 输入 'import <文件路径>' : 手动导入本地 JSON/CSV/TXT/DOCX 文件")
     print("   (例如: import 私聊_Arkme.json)")
