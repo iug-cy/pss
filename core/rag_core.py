@@ -1,22 +1,29 @@
 import os
 import re
-
-
 import json
 import time
 import datetime
 import pandas as pd
 from docx import Document as DocxDocument
 import ollama
-
 from core.weflow_client import WeFlowAPIClient
 from core.process import ChatRecordProcessor
 from config import LLM_MODEL_DEFAULT, SEARCH_TOP_K, CHAT_HISTORY_MAX_LEN
 
 class PrivateMemoryAssistant:
-    def __init__(self, llm_model: str = 'qwen2.5:7b'):
+    def __init__(self, llm_model: str = 'qwen2.5:7b', collection_name: str = None):
         self.llm_model = llm_model
-        self.processor = ChatRecordProcessor()
+
+        if collection_name:
+            from config import DB_PATH, LOCAL_MODEL_DIR
+            self.processor = ChatRecordProcessor(
+                db_path=str(DB_PATH),
+                collection_name=collection_name,
+                model_path=str(LOCAL_MODEL_DIR)
+            )
+        else:
+            self.processor = ChatRecordProcessor()
+
         self.api_client = WeFlowAPIClient()
         self.chat_history = []
 
@@ -29,17 +36,14 @@ class PrivateMemoryAssistant:
         if not os.path.exists(export_dir):
             return False, f"❌ 导出目录不存在，且自动创建失败: {export_dir}，请在左侧侧边栏配置正确的路径。"
 
-        # 1. 在目录中进行模糊搜索
         matched_files = []
         for file_name in os.listdir(export_dir):
-            # 只要文件名包含目标人物的名字，且是json文件，就抓取
             if target_name in file_name and file_name.endswith('.json'):
                 matched_files.append(os.path.join(export_dir, file_name))
 
         if not matched_files:
             return False, f"❌ 未在导出目录中找到包含【{target_name}】的聊天记录。\n请确认您是否已在 WeFlow 软件中将其导出。"
 
-        # 2. 如果找到多个，默认取第一个
         target_file = matched_files[0]
 
         try:
@@ -51,18 +55,14 @@ class PrivateMemoryAssistant:
     def import_local_file(self, file_path: str, alias: str = None) -> str:
         self.chat_history.clear()
         if not os.path.exists(file_path): return f"❌ 找不到文件: {file_path}"
-
         target_name = alias or os.path.basename(file_path).split('.')[0].replace("私聊_", "")
-
         # 执行覆盖清理
         self._delete_old_records(target_name)
-
         ext = os.path.splitext(file_path)[-1].lower()
         if ext == '.json':
             result = self.processor.full_process(chat_file_path=file_path, time_window=30, target_name=target_name)
             return f"✅ 成功覆盖更新微信 JSON！生成了 {result['split_doc_count']} 个记忆块。本机主人被识别为：【{result.get('owner_name')}】"
 
-        # 2. 如果是其他普通文档，走基础读取通道
         docs_content = []
         try:
             if ext == '.txt':
@@ -80,12 +80,10 @@ class PrivateMemoryAssistant:
             if not docs_content:
                 return "⚠️ 文件为空或读取失败。"
 
-            # 生成向量并存入数据库(复用 processor的Chroma客户端)
+            # 生成向量并存入数据库
             current_time = int(time.time())
             ids = [f"file_{current_time}_{i}" for i in range(len(docs_content))]
             embeddings = self.processor.embed_model.encode(docs_content).tolist()
-
-            # 这里补充一点元数据
             metadatas = [{"source": os.path.basename(file_path)} for _ in range(len(docs_content))]
 
             self.processor.collection.add(
@@ -100,7 +98,9 @@ class PrivateMemoryAssistant:
             return f"❌ 导入文件出错: {e}"
 
     def import_from_weflow_api(self, wxid: str, alias: str = None, limit: int = 5000) -> str:
-        """通过 API 自动获取并入库"""
+        """
+        通过API自动获取并入库
+        """
         self.chat_history.clear()
         api_name, owner_name, data_list = self.api_client.fetch_messages(wxid, limit)
 
@@ -127,11 +127,12 @@ class PrivateMemoryAssistant:
             return f"❌ API 数据处理失败: {e}"
 
     def resolve_name_to_wxid(self, name: str) -> str:
-        """供前端 Agent 调用的接口：人名转 WXID"""
         return self.api_client.find_wxid_by_name(name)
 
     def clear_memory(self) -> str:
-        """清空向量库和当前对话记忆"""
+        """
+        清空向量库和当前对话记忆
+        """
         try:
             self.processor.chroma_client.delete_collection(self.processor.collection_name)
             self.processor._collection = None
@@ -159,7 +160,6 @@ class PrivateMemoryAssistant:
         elif re.search(r'(前年)', query):
             base_year -= 2
 
-        # 1. 相对天数
         if re.search(r'(今天|今日)', query):
             target_dates.append(current_time.strftime("%Y-%m-%d"))
         if re.search(r'(昨天|昨日)', query):
@@ -167,12 +167,10 @@ class PrivateMemoryAssistant:
         if re.search(r'(前天)', query):
             target_dates.append((current_time - datetime.timedelta(days=2)).strftime("%Y-%m-%d"))
 
-        # 2. 相对周数
         if re.search(r'(上周|最近一周|这几天|这周|本周)', query):
             for i in range(0, 8):
                 target_dates.append((current_time - datetime.timedelta(days=i)).strftime("%Y-%m-%d"))
 
-        # 3. 绝对具体日期 (例如：3月10日, 2026年3月10号)
         date_pattern = r'(?:(\d{2,4})年)?(\d{1,2})月(\d{1,2})[日号]?'
         for match in re.finditer(date_pattern, query):
             y = int(match.group(1)) if match.group(1) else base_year
@@ -183,7 +181,6 @@ class PrivateMemoryAssistant:
             except ValueError:
                 pass
 
-        # 4. 绝对月份 (例如：去年3月, 3月份)
         if not target_dates:
             month_pattern = r'(?:(\d{2,4})年)?(\d{1,2})月份?'
             for match in re.finditer(month_pattern, query):
@@ -206,7 +203,7 @@ class PrivateMemoryAssistant:
         current_date_str = current_time.strftime("%Y-%m-%d")
         current_time_str = current_time.strftime("%Y-%m-%d %H:%M:%S")
 
-        # NLP 提取时间
+        # 提取时间
         target_dates = self._parse_time_intent(question)
 
         where_clauses = []
@@ -280,15 +277,15 @@ class PrivateMemoryAssistant:
         你是一个逻辑极其严密、擅长抽丝剥茧的私人记忆助理。请仔细阅读【参考聊天记录】并回答。
         {fallback_warning}
         【核心推理法则（必须严格遵守）】：
-        1. 🕵️ 跨会话情报捕捉（极度重要！）：当用户询问“某人的事”时，答案不仅可能在与该人的直接对话中，还极有可能隐藏在与“其他人”的聊天讨论中！
+        1. 跨会话情报捕捉（极度重要！）：当用户询问“某人的事”时，答案不仅可能在与该人的直接对话中，还极有可能隐藏在与“其他人”的聊天讨论中！
         - 你必须仔细阅读所有片段的【内容】，绝不能因为片段头部是“与A的聊天”就忽略里面关于B的线索！
-        2. 🎭 角色代入：片段中出现的“我”代表用户本人。每段开头的【这是你与 XXX 的聊天片段】说明了当前对话的另一方是谁。
+        2. 角色代入：片段中出现的“我”代表用户本人。每段开头的【这是你与 XXX 的聊天片段】说明了当前对话的另一方是谁。
         
         【极度重要法则】：
         1. 身份绑定：“{dynamic_owner_name}” 是向你提问的主人。
         2. 场景隔离：仔细阅读片段开头的【对话场景】。如果主人问“私聊里发的”，你绝不能拿“群聊”的记录去充数！提问中只提到“今年”，就绝对不能出现今年以前的回答；提到“最近”，则必须优先考虑时间最近的答案！
         3. 绝对真实：如果你提供的【参考聊天片段】里没有回答用户问题的证据，绝对禁止编造！直接回答“在这段时间内，聊天记录未提及...”。
-        4. 文件与多模态寻回（重要）：如果主人在寻找某个文件、安装包、图片或视频（如“他发给我的安装包叫什么”、“上次那张图片在哪”），你必须在记录中仔细寻找包含【发送了一份文件/链接，文件名称为：...】或【本地存储路径或标识:...】的内容，并**在回答中明确写出该文件的准确名称或路径**！
+        4. 文件与多模态寻回（重要）：如果主人在寻找某个文件、安装包、图片或视频（如“他发给我的文件叫什么”、“上次那张图片在哪”），你必须在记录中仔细寻找包含【发送了一份文件/链接，文件名称为：...】或【本地存储路径或标识:...】的内容，并**在回答中明确写出该文件的准确名称或路径**！
         5. 绝对客观：聊天记录中经常出现“讨论A方案”最后“决定B方案”的情况。你不能只看提及次数最多的词，必须按照【时间顺序】理清决策脉络！
         6. 寻找终局：注意寻找“决定”、“行”、“买”、“交给你了”等表示最终决定的词汇，作为判断事件结果的最终依据。
         
@@ -334,16 +331,10 @@ class PrivateMemoryAssistant:
                 else:
                     answer = f"🤖【最终结论】:\n{final_answer}"
             else:
-                # 兜底：抹除可能残留的标签
                 final_answer = raw_answer.replace('<answer>', '').replace('</answer>', '').replace('<thought>','').replace(
 '</thought>', '').strip()
                 answer = final_answer
 
-            # =====================================================================
-            # 🛡️ 物理防爆盾 3：历史记忆动态压缩 (History Compression)
-            # RAG 系统的本质是每次带上资料去问，没必要把上一次 AI 啰嗦的长篇大论全记下来！
-            # 存入聊天历史时，如果大模型的回答超过 200 字，自动生成摘要存入历史。
-            # =====================================================================
             history_answer_to_save = final_answer
             if len(history_answer_to_save) > 200:
                 history_answer_to_save = history_answer_to_save[:200] + "..."
@@ -369,7 +360,6 @@ class PrivateMemoryAssistant:
     def get_dashboard_data(self) -> dict:
         """
         【数字记忆大屏接口】：统计当前记忆库中不同联系人的记忆块分布
-        返回字典格式，例如 {"谭启翔": 45, "胡老师": 12}
         """
         try:
             # 获取数据库中所有的元数据
@@ -393,59 +383,67 @@ class PrivateMemoryAssistant:
         try:
             # 限制召回数量防 OOM
             search_results = self.processor.collection.query(
-                query_embeddings=self.processor.embed_model.encode("任务 安排 计划 待办 总结 进度 经过 承诺 钱 款项 同意 确认 纠纷 违约 密码 文件 进展").tolist(),
-                n_results=8,
+                query_embeddings=self.processor.embed_model.encode("任务 安排 计划 待办 总结 进度 经过 承诺 钱 款项 同意 确认 纠纷 违约 密码 文件 进展 决定").tolist(),
+                n_results=20,
                 where={"target_name": target_name}
             )
 
             if not search_results.get("documents") or not search_results["documents"][0]:
                 return "暂无足够的历史记录来生成知识大纲。"
 
+            docs_with_meta = list(zip(search_results["documents"][0], search_results["metadatas"][0]))
+            # 依据元数据中的start_time进行正序排列
+            sorted_docs = sorted(docs_with_meta, key=lambda x: x[1].get('start_time', ''))
+
             context_parts = []
-            for i, content in enumerate(search_results["documents"][0]):
-                meta = search_results["metadatas"][0][i]
+            for content, meta in sorted_docs:
                 context_parts.append(f"[{meta.get('start_time', '')}]片段:\n{content}")
             context_text = "\n\n".join(context_parts)
 
-            if len(context_text) > 3000:
-                context_text = context_text[:3000] + "\n...[历史记录已被截断]..."
+            MAX_CHARS = 6000
+            if len(context_text) > MAX_CHARS:
+                context_text = context_text[-MAX_CHARS:] + "\n\n...[为保护内存，极早期次要记录已被截断]..."
 
-            # 🌟 核心：多套 Prompt 模板路由
-            if template_type == "电子证据链提炼 (Evidence Chain)":
+            # Prompt模板路由
+            if template_type == "法务审前事实梳理/电子证据链":
                 prompt = f"""
                 你是一位专业的法务电子取证助理。请严谨阅读以下与【{target_name}】的历史记录。
                 任务：客观、中立地提取其中可能涉及承诺、资金、协议、争议或事实确认的关键对话，构建时间轴证据链。
-
                 请严格按照以下 Markdown 输出：
-                ### ⚖️ 电子证据链梳理 (与 {target_name})
-                **1. 核心事实/争议焦点：** (简述这段记录中双方主要围绕什么事情展开)
-                **2. 关键承诺与确认：** (提取出“同意”、“行”、“我转你”等确权词汇及对应的上下文)
-                **3. ⏱️ 行为时间轴：**
-                - **[YYYY-MM-DD HH:MM]** 发生了什么（必须保持客观陈述，勿加主观猜测）
+                ### 法务审前事实梳理 (与 {target_name})
+                **1. 核心事实时间轴：** 
+                (严格按[YYYY-MM-DD HH:MM]格式列出发生了什么，保持客观陈述)
+                **2. 关键表达提取：** 
+                (提取出诸如“同意”、“行”、“买”、“退”等带有确权或动作性质的词汇及上下文)
+                **3. 建议保全数据范围：** 
+                (指出哪些日期的时间段、哪几份文件/图片最为关键，建议固化保全)
+                **4. ⚠️ 法律边界声明：** 
+                本梳理仅基于客观聊天记录的NLP语义提取，不构成任何正式法律意见，仅供诉前事实参考。
 
                 【历史记录】：\n{context_text}"""
 
-
-            elif template_type == "企业合规风险审计 (Audit)":
+            elif template_type == "科研协作知识管理":
                 prompt = f"""
-                你是企业内部数据合规审计员。请阅读以下与【{target_name}】的记录。
-                任务：审查其中是否存在泄露账号密码、内部文件外发、违规承诺或其他异常行为。
+                你是资深科研项目经理。请阅读与【{target_name}】的科研协作记录。
+                任务：梳理近期科研脉络，提炼学术关键点。
                 请严格按照以下 Markdown 输出：
-                ### 🛡️ 合规风险审计报告
-                - **🔴 高危风险点：** (如有提及密码、涉密文件、异常资金，请重点标出；如无则写“暂未发现明显高危风险”)
-                - **📄 涉密文件与资产轨迹：** (提取记录中出现过的文件名称及路径)
-                - **💡 审计建议：** (针对上述情况给出简要管理建议)
-
+                ### 科研协作知识脉络
+                **1. 关键决策与指导意见：** (提取导师或合作者给出的核心建议、否定了什么、确定了什么)
+                **2. 文献与文件流转：** (列出讨论过的文件、论文名或代码脚本)
+                **3. 📌待办事项清单 (Action Items)：** 
+                - [ ] 事项1 (提取自某年某月)
+                - [ ] 事项2 
                 【历史记录】：\n{context_text}"""
 
-            else:  # 默认：项目周报/会议纪要
+            else:
                 prompt = f"""你是高效的生活/工作助理。请阅读与【{target_name}】的历史记录。
-                任务：梳理近期事件脉络，并提炼未完成的待办事项。
+                任务：梳理近期事件脉络，帮助主人回忆核心信息，并提炼未完成的待办事项。
                 请按照以下 Markdown 输出：
-                ### 📌 核心待办 (Action Items)
-                - [ ] 事项1 (提取自某年某月)
-                ### ⏱️ 事件脉络回顾
+                ### 📝 个人知识与日常回溯
+                **1. ⏱️ 核心时间轴：**
                 - **[YYYY-MM-DD]** 关键事件描述
+                **2. 💡 备忘与关键信息提取：** 
+                (提取聊天中出现的密码、账号、地址、账单、约定等关键信息)
                 
                 【历史记录】：\n{context_text}"""
 

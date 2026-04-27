@@ -1,4 +1,3 @@
-# core/convert.py
 import json
 import os
 import re
@@ -8,18 +7,17 @@ from datetime import datetime
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
-# --- 自动定位项目路径 ---
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-RAW_DIR = os.path.join(BASE_DIR, "data", "raw")  # QQ原始数据监听目录
-OUTPUT_DIR = os.path.join(BASE_DIR, "data", "texts")  # 转换后输出的存放目录
 
-# 确保目录存在
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+RAW_DIR = os.path.join(BASE_DIR, "data", "raw")  # QQ原始数据目录
+OUTPUT_DIR = os.path.join(BASE_DIR, "data", "texts")  # 转换后输出的存放目录
 os.makedirs(RAW_DIR, exist_ok=True)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-
 def parse_friend_info_from_filename(filename):
-    """从原始文件名解析好友名（最终兜底方案）"""
+    """
+    从原始文件名解析好友名
+    """
     base_name = os.path.splitext(os.path.basename(filename))[0]
     name = re.sub(r'^(私聊_|friend_|UID_)', '', base_name)
     name = re.sub(r'_u_[a-zA-Z0-9]+|_\d{8}_\d{6}|\（.*?\）|UID_\w+', '', name)
@@ -27,10 +25,7 @@ def parse_friend_info_from_filename(filename):
 
 
 def convert_napcat_to_custom(input_file):
-    """执行转换的核心逻辑 (与你原来的一致，略微优化了文件安全检查)"""
-    # 为了防止文件被持续写入占用，稍微等一下
     time.sleep(1)
-
     print(f"\n🔄 [QQ适配器] 察觉原始数据，开始转换: {os.path.basename(input_file)}")
 
     try:
@@ -70,7 +65,6 @@ def convert_napcat_to_custom(input_file):
 
     safe_name = re.sub(r'[\\/*?:"<>|]', "", final_name)
 
-    # 强制加上“私聊_”前缀，这样你的 RAG 系统能完美复用你的“场景隔离”逻辑！
     if friend_uin and friend_uin != "未知QQ" and friend_uin.strip():
         filename = f"私聊_{safe_name}{friend_uin.strip()}.json"
     else:
@@ -83,7 +77,6 @@ def convert_napcat_to_custom(input_file):
         msg_id = msg.get("id", str(index))
         timestamp = msg.get("timestamp", 0)
         time_str = msg.get("time", "")
-
         create_time = 0
         formatted_time = ""
         if timestamp > 0:
@@ -148,8 +141,7 @@ def convert_napcat_to_custom(input_file):
             local_type = 6
             content = content or "[动画表情]"
 
-        # 最关键的补全：包装成带有 Arkme/WeFlow 标志的格式
-        # 注意：这里我们构造一个符合原来 load_and_group_chat_records 期望解析的字典结构
+        # 包装成带有Arkme标志的格式
         result.append({
             "localId": index + 1,
             "createTime": create_time,
@@ -165,12 +157,11 @@ def convert_napcat_to_custom(input_file):
             "platformMessageId": str(msg_id)
         })
 
-    # 将内容包装成 WeFlow 格式字典，以兼容原系统自动识别
     final_output = {
         "weflow": {
             "version": "1.0.3",
             "format": "arkme-json",
-            "generator": "QQAdapter"  # 标志这是你转码的
+            "generator": "QQAdapter"
         },
         "session": {
             "type": "私聊",
@@ -178,14 +169,12 @@ def convert_napcat_to_custom(input_file):
             "displayName": final_name
         },
         "senders": [
-            # 建立ID映射表（核心！）
             {"senderID": self_uid, "displayName": self_name, "remark": "本机主人"},
             {"senderID": friend_uin, "displayName": final_name, "remark": friend_remark}
         ],
         "messages": result
     }
 
-    # 修改原 messages 中的 senderID 使其匹配上方的 senders 表
     for m in final_output["messages"]:
         if m["isSend"] == 1:
             m["senderID"] = self_uid
@@ -202,9 +191,10 @@ def convert_napcat_to_custom(input_file):
     print(f"✅ 转换完成！输出为：{filename}")
     return True
 
-
-# ================= 监听器类 =================
 class RawDataHandler(FileSystemEventHandler):
+    """
+    文件监听
+    """
     def __init__(self):
         self.processed_files = {}  # 缓存，防抖
 
@@ -214,11 +204,10 @@ class RawDataHandler(FileSystemEventHandler):
 
         filename = os.path.basename(file_path)
         current_time = time.time()
-        # 防抖：同一文件 5 秒内修改不重复触发
+        # 防抖
         if filename in self.processed_files and (current_time - self.processed_files[filename] < 5):
             return
         self.processed_files[filename] = current_time
-
         # 执行转换
         convert_napcat_to_custom(file_path)
 
@@ -232,24 +221,19 @@ class RawDataHandler(FileSystemEventHandler):
 
 
 def start_adapter_daemon():
-    print("=" * 60)
     print("🔄 [多源异构转换引擎] 已启动...")
     print(f"📂 正在监听原始目录: {RAW_DIR}")
     print("💡 提示：将QQ导出的 JSON 文件拖入上方目录，系统将全自动完成清洗。")
-    print("=" * 60)
-
     event_handler = RawDataHandler()
     observer = Observer()
     observer.schedule(event_handler, RAW_DIR, recursive=False)
     observer.start()
-
     try:
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
         observer.stop()
     observer.join()
-
 
 if __name__ == "__main__":
     start_adapter_daemon()

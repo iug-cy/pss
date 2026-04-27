@@ -1,4 +1,3 @@
-# bootstrap.py
 import sys
 import os
 import subprocess
@@ -10,11 +9,13 @@ sys.path.append(BASE_DIR)
 try:
     from config import LOCAL_MODEL_DIR, MODEL_ID, DB_PATH, TEMP_DIR, WEFLOW_EXPORT_DIR, LLM_MODEL_DEFAULT
 except ImportError:
-    print("错误：无法导入 config 模块，请检查项目结构")
+    print("错误：无法导入config模块，请检查项目结构")
     sys.exit(1)
 
 def auto_install_model():
-    """自动检查并下载模型到 pss_md/models"""
+    """
+    自动检查并下载模型到pss_md/models
+    """
     LOCAL_MODEL_DIR.mkdir(parents=True, exist_ok=True)
 
     weight_files = ["pytorch_model.bin", "model.safetensors"]
@@ -24,15 +25,15 @@ def auto_install_model():
     if has_weight and has_config:
         return True
 
-    print(f"\n📥 未检测到完整的本地模型，正在从魔搭社区(ModelScope)自动下载 {MODEL_ID}...")
-    print(f"📂 目标路径：{LOCAL_MODEL_DIR}")
-    print(f"⏳ 模型大小约 2.2GB，根据网速可能需要几分钟，请耐心等待...\n")
+    print(f"\n未检测到完整的本地模型，正在从魔搭社区(ModelScope)自动下载 {MODEL_ID}...")
+    print(f"目标路径：{LOCAL_MODEL_DIR}")
+    print(f"模型大小约2.2GB，可能需要几分钟，请耐心等待...\n")
 
     try:
         try:
             import modelscope
         except ImportError:
-            print("⚙️ 正在自动安装下载依赖库 modelscope...")
+            print("⚙️ 正在自动安装下载依赖库modelscope...")
             os.system(f"{sys.executable} -m pip install modelscope -q")
 
         from modelscope.hub.snapshot_download import snapshot_download
@@ -56,26 +57,22 @@ def auto_install_model():
         sys.exit(1)
 
 def ensure_ollama_model(model):
-
     try:
         result = subprocess.run(
             ["ollama", "show", model],
             capture_output=True,
             text=True
         )
-
         if result.returncode != 0:
-            print(f"正在下载 Ollama 模型: {model}")
+            print(f"正在下载Ollama模型: {model}")
             subprocess.run(["ollama", "pull", model])
 
     except FileNotFoundError:
-        print("未检测到 Ollama，请先安装：https://ollama.com")
+        print("未检测到Ollama，请先安装：https://ollama.com")
 
 def check_ollama():
-
     try:
         subprocess.run(["ollama","--version"],capture_output=True)
-
     except:
 
         print("未检测到 Ollama，请先安装 https://ollama.com")

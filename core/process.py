@@ -13,9 +13,9 @@ from config import DB_PATH, COLLECTION_NAME, LOCAL_MODEL_DIR
 
 class ChatRecordProcessor:
     """
-    - 支持自动识别并解析 Arkme JSON 格式与基础 JSON 格式
-    - 使用 sentence-transformers 直接加载本地模型
-    - 使用原生 chromadb 客户端管理向量库
+    - 支持自动识别并解析Arkme JSON格式与基础JSON格式
+    - 使用sentence-transformers直接加载本地模型
+    - 使用原生chromadb客户端管理向量库
     """
 
     def __init__(
@@ -41,7 +41,6 @@ class ChatRecordProcessor:
 
     @property
     def embed_model(self) -> SentenceTransformer:
-        """加载本地Embedding模型"""
         if self._embed_model is None:
             from bootstrap import auto_install_model
             auto_install_model()
@@ -107,7 +106,9 @@ class ChatRecordProcessor:
             target_name: str = "对方",
             fallback_owner: str = "本机主人"
     ) -> tuple:
-        """加载JSON并按时间窗口分组 (自适应 Arkme 格式)"""
+        """
+        加载JSON并按时间窗口分组
+        """
         try:
             with open(chat_file_path, "r", encoding="utf-8") as f:
                 chat_data = json.load(f)
@@ -157,10 +158,8 @@ class ChatRecordProcessor:
                 return 0
 
         messages_to_process.sort(key=get_time)
-
         grouped_records = []
         current_group = None
-
         for record in messages_to_process:
             content = str(record.get("content") or "").strip()
             sender = str(record.get("sender") or "未知").strip()
@@ -169,20 +168,17 @@ class ChatRecordProcessor:
 
             if not content:
                 continue
-
             try:
                 current_time = datetime.strptime(time_str, "%Y-%m-%d %H:%M:%S")
             except:
                 current_time = datetime.now()
                 time_str = current_time.strftime("%Y-%m-%d %H:%M:%S")
-
             if not current_group:
                 current_group = {"messages": [(time_str, sender, content)], "senders": {sender}, "start_time": time_str,
                                  "end_time": time_str, "type": msg_type, "last_time": current_time, "msg_count": 1}
                 continue
 
             time_diff = abs((current_time - current_group["last_time"]).total_seconds() / 60)
-
             if time_diff <= time_window:
                 current_group["messages"].append((time_str, sender, content))  # 🌟 存入 time_str
                 current_group["senders"].add(sender)
@@ -194,10 +190,8 @@ class ChatRecordProcessor:
                     grouped_records.append(current_group)
                 current_group = {"messages": [(time_str, sender, content)], "senders": {sender}, "start_time": time_str,
                                  "end_time": time_str, "type": msg_type, "last_time": current_time, "msg_count": 1}
-
         if current_group and current_group["msg_count"] >= min_msg_count:
             grouped_records.append(current_group)
-
         for group in grouped_records:
             group["sender"] = ", ".join(sorted(group["senders"]))
             start_dt = datetime.strptime(group["start_time"], "%Y-%m-%d %H:%M:%S")
@@ -216,7 +210,7 @@ class ChatRecordProcessor:
                 elif s in ["对方", target_name, "未知"]:
                     display_s = f"聊天对象({target_name})"
                 else:
-                    display_s = s  # 其他群成员
+                    display_s = s
 
                 lines.append(f"[{t}] {display_s}：{c}")
 
@@ -287,12 +281,14 @@ class ChatRecordProcessor:
         }
 
     def search(self, query: str, top_k: int = 5, where_filter: dict = None) -> List[Dict]:
+        """
+        向量数据库召回相关聊天内容
+        """
         query_embedding = self.embed_model.encode(query).tolist()
         query_params = {
             "query_embeddings": [query_embedding],
             "n_results": top_k
         }
-
         if where_filter:
             query_params["where"] = where_filter
 

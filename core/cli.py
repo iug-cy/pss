@@ -9,13 +9,10 @@ from config import LLM_MODEL_DEFAULT
 
 def main():
     init_environment()
-    print("=" * 60)
     print("🤖 初始化私人记忆引擎中...")
     # 实例化核心引擎
     assistant = PrivateMemoryAssistant(llm_model=LLM_MODEL_DEFAULT)
     print(f"✅ 引擎就绪！当前记忆库知识块数量: {assistant.get_db_stats()}")
-    print("=" * 60)
-
     print("\n【操作指南】")
     print("1. 输入 'api <wxid>' : 通过WeFlow API自动抓取指定好友记录入库")
     print("   (例如: api wxid_rx37zsnsox6f22)")
@@ -28,14 +25,11 @@ def main():
 
     while True:
         user_input = input("\n📝 请输入指令或问题：").strip()
-
         if not user_input:
             continue
-
         if user_input.lower() == "quit":
             print("再见！")
             break
-
         # 严格拦截 clear，并使用 continue 阻断向下执行
         if user_input.lower() == "clear":
             print("⏳ 正在执行大脑和数据库格式化...")
@@ -44,7 +38,7 @@ def main():
             continue
 
         if user_input.startswith("api "):
-            # 支持格式: api wxid_xxxx 备注名
+            # 支持格式: api wxid_xxxx备注名
             parts = user_input.split()
             if len(parts) < 2:
                 print("❌ 格式错误！请输入: api <wxid> [备注名]")
@@ -53,7 +47,7 @@ def main():
             wxid = parts[1].strip()
             alias = parts[2].strip() if len(parts) > 2 else None
 
-            print(f"⏳ 正在联系 API 服务器 (目标: {alias or wxid})...")
+            print(f"⏳ 正在联系API服务器 (目标: {alias or wxid})...")
             result_msg = assistant.import_from_weflow_api(wxid, alias)
             print(result_msg)
             continue

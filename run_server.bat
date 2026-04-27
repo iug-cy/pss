@@ -11,7 +11,7 @@ echo [1/3] 正在自检 Python 运行环境与依赖库...
 call D:\Miniconda3\Scripts\activate.bat pss
 echo.
 echo [2/3] 正在启动多源异构(QQ/微信)自动化转换引擎...
-:: 使用 start /b 在后台独立运行你刚写的 convert.py
+
 start /b python core/convert.py
 
 echo.
