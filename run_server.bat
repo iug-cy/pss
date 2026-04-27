@@ -1,10 +1,10 @@
 @echo off
 chcp 65001
 color 0A
-title MemoryOS 引擎启动序列
+title MemoraOS引擎启动
 
 echo =======================================================
-echo       MemoryOS 端侧跨模态数字记忆引擎 - 计设演示
+echo       MemoraOS——端侧记忆认知系统
 echo =======================================================
 echo.
 echo [1/3] 正在自检 Python 运行环境与依赖库...

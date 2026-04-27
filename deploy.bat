@@ -7,7 +7,7 @@ echo 当前工作目录: %CD%
 
 :: 检查项目结构
 if not exist "core" (
-    echo [错误] 未找到 core 目录，请确保此脚本在项目根目录运行
+    echo [错误]未找到core目录，请确保此脚本在项目根目录运行
     pause
     exit /b 1
 )
