@@ -55,7 +55,6 @@ if "theme" not in st.session_state:
 def toggle_theme():
     st.session_state.theme = "dark" if st.session_state.theme == "light" else "light"
 
-# 4. 动态写入 CSS (实现毛玻璃效果与动态颜色)
 if st.session_state.theme == "light":
     custom_css = f"""
     <style>
