@@ -72,18 +72,19 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
-:: 升级pip
-python -m pip install --upgrade pip --quiet
+:: 升级pip并指定国内镜像源
+python -m pip install --upgrade pip -i https://pypi.tuna.tsinghua.edu.cn/simple --quiet
 echo [完成] pip 升级成功
 
 :: 安装依赖
-pip install -r requirements.txt --quiet
+echo 正在从国内镜像源极速下载依赖包，请稍候...
+pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 if %errorlevel% neq 0 (
-    echo [错误] 安装依赖失败
+    echo [错误] 安装依赖失败，请检查网络连接。
     pause
     exit /b 1
 )
-echo [完成] 依赖安装成功
+echo [完成] 环境依赖安装成功
 
 :: 下载Embedding模型
 echo.
@@ -129,3 +130,5 @@ if "%choice%"=="1" (
 
 echo.
 pause
+
+
