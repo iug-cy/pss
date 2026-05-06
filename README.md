@@ -1,7 +1,7 @@
 <div align="center">
   <img src="web/background.jpg" alt="MemoraOS Logo" width="200" style="border-radius: 20px;"/>
   <h1>MemoraOS —— 端侧记忆认知系统</h1>
-  <p>面向法务取证、科研协作与个人数字资产的端侧 AI 审计中枢</p>
+  <p>面向法务取证、科研协作与个人数字资产的端侧AI审计中枢</p>
 
   [![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
   [![Ollama](https://img.shields.io/badge/Ollama-Local_LLM-orange.svg)](https://ollama.com/)
@@ -14,7 +14,7 @@
 
 在数字化时代，个人与商业机密高度集中于即时通讯软件与本地文档中。传统的云端 AI 知识库（如 ChatGPT、Notion AI）要求用户全量上传隐私数据，存在严重的数据泄露与合规风险。
 
-**MemoraOS** 从“数据主权应归于个人”的核心价值观出发，构建了一套**可断网运行、100%本地计算**的 RAG（检索增强生成）操作系统。通过搭载端侧轻量级大模型（如 Qwen2.5:7b），旨在打破异构数据的格式孤岛，将杂乱的聊天记录化为结构化的知识脉络。
+**MemoraOS**从“数据主权应归于个人”的核心价值观出发，构建了一套**可断网运行、100%本地计算**的RAG（检索增强生成）操作系统。通过搭载端侧轻量级大模型（如 Qwen2.5:7b），旨在打破异构数据的格式孤岛，将杂乱的聊天记录化为结构化的知识脉络。
 
 ## ✨ 核心亮点 (Core Features)
 
@@ -27,7 +27,7 @@
 ## 📸 系统预览
 ![index.png](index.png)
 
-|                   跨模态图片渲染                    |             AI 思维链透明展示 & 结构化知识萃取             |
+|                   跨模态图片渲染                    |             AI思维链透明展示 & 结构化知识萃取              |
 |:--------------------------------------------:|:--------------------------------------------:|
 | <img src="search.png" width="400" alt="主界面"> | <img src="sort.png" width="400" alt="检索与萃取"> |
 
